@@ -13,6 +13,22 @@ rustup install nightly
 cargo install cargo-fuzz
 ```
 
+### Stable-only systems (no rustup)
+
+`cargo-fuzz` itself installs on stable. The nightly requirement comes
+from `libfuzzer-sys`, which uses the unstable `sanitizer` and
+`#[no_coverage]` machinery. On a system without rustup (Arch's
+`pacman -S rust`, NixOS, Bazel-pinned toolchains, …), set
+`RUSTC_BOOTSTRAP=1` to opt the stable compiler into nightly features:
+
+```bash
+RUSTC_BOOTSTRAP=1 cargo fuzz build <target>
+RUSTC_BOOTSTRAP=1 cargo fuzz run   <target> -- -max_total_time=60
+```
+
+Same instrumentation, no nightly install. Only suitable for local
+fuzzing — never set `RUSTC_BOOTSTRAP=1` in CI for non-fuzz builds.
+
 ## Targets
 
 | Target | What it stresses |
