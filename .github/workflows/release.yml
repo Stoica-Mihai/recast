@@ -1,0 +1,84 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: cargo build
+        run: cargo build --release --all-features --target ${{ matrix.target }} -p recast
+      - name: package (unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          name="recast-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p dist staging
+          cp "target/${{ matrix.target }}/release/recast" staging/
+          cp README.md LICENSE CHANGELOG.md staging/
+          tar -czf "dist/${name}.tar.gz" -C staging .
+          (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
+      - name: package (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $name = "recast-$env:GITHUB_REF_NAME-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path dist, staging | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/recast.exe" staging/
+          Copy-Item README.md, LICENSE, CHANGELOG.md staging/
+          Compress-Archive -Path staging/* -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii "dist/$name.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recast-${{ matrix.target }}
+          path: dist/*
+
+  publish:
+    name: attach to release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: list
+        run: ls -la artifacts/
+      - name: upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --notes "Automated release for $tag."
+          fi
+          gh release upload "$tag" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
