@@ -541,47 +541,71 @@ fn emit_node(
     node: Node<'_>,
     src: &[u8],
 ) {
-    if !node.is_named() {
-        return;
+    use std::fmt::Write as _;
+
+    // Iterative traversal: an unbounded `--ast` pattern would otherwise
+    // recurse to whatever depth the user supplies (parser nests inside
+    // nested expressions), giving them a stack-overflow vector.
+    enum Frame<'tree> {
+        Open { node: Node<'tree>, field: Option<&'static str> },
+        Close,
     }
-    if let Some(ellipsis) = subtree_ellipsis_capture(node, src) {
-        buf.push_str(" (_) @");
-        buf.push_str(&ellipsis);
-        return;
-    }
-    if let Some(meta) = metavar_at(node, src) {
-        buf.push_str(" (_) @");
-        buf.push_str(&meta);
-        return;
-    }
-    // Terminal named leaves (identifier, integer_literal, etc.) are
-    // constrained to exact text via #eq? predicates so a literal in the
-    // pattern doesn't match every same-kind sibling in the source.
-    if node.named_child_count() == 0
-        && let Ok(text) = node.utf8_text(src)
-    {
-        use std::fmt::Write as _;
-        let n = *lit_counter;
-        *lit_counter += 1;
-        let _ = write!(buf, " ({}) @__lit{n}", node.kind());
-        let mut pred = String::new();
-        let _ = write!(pred, "(#eq? @__lit{n} \"{}\")", escape_query_string(text));
-        predicates.push(pred);
-        return;
-    }
-    buf.push_str(" (");
-    buf.push_str(node.kind());
-    let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
-        let field = node.field_name_for_child(child.id() as u32);
-        if let Some(name) = field {
-            buf.push(' ');
-            buf.push_str(name);
-            buf.push(':');
+
+    let mut stack: Vec<Frame<'_>> = vec![Frame::Open { node, field: None }];
+    while let Some(frame) = stack.pop() {
+        match frame {
+            Frame::Close => buf.push(')'),
+            Frame::Open { node, field } => {
+                if !node.is_named() {
+                    continue;
+                }
+                if let Some(name) = field {
+                    buf.push(' ');
+                    buf.push_str(name);
+                    buf.push(':');
+                }
+                if let Some(ellipsis) = subtree_ellipsis_capture(node, src) {
+                    buf.push_str(" (_) @");
+                    buf.push_str(&ellipsis);
+                    continue;
+                }
+                if let Some(meta) = metavar_at(node, src) {
+                    buf.push_str(" (_) @");
+                    buf.push_str(&meta);
+                    continue;
+                }
+                // Terminal named leaves (identifier, integer_literal, etc.)
+                // are constrained to exact text via `#eq?` predicates so a
+                // literal in the pattern doesn't match every same-kind
+                // sibling in the source.
+                if node.named_child_count() == 0
+                    && let Ok(text) = node.utf8_text(src)
+                {
+                    let n = *lit_counter;
+                    *lit_counter += 1;
+                    let _ = write!(buf, " ({}) @__lit{n}", node.kind());
+                    let mut pred = String::new();
+                    let _ = write!(pred, "(#eq? @__lit{n} \"{}\")", escape_query_string(text));
+                    predicates.push(pred);
+                    continue;
+                }
+                buf.push_str(" (");
+                buf.push_str(node.kind());
+                stack.push(Frame::Close);
+                // Collect children up front so we can push them in reverse,
+                // making the LIFO stack visit them in source order.
+                let mut cursor = node.walk();
+                let mut children: Vec<Frame<'_>> = Vec::new();
+                for (idx, child) in node.named_children(&mut cursor).enumerate() {
+                    let field = node.field_name_for_named_child(idx as u32);
+                    children.push(Frame::Open { node: child, field });
+                }
+                for child in children.into_iter().rev() {
+                    stack.push(child);
+                }
+            }
         }
-        emit_node(buf, predicates, lit_counter, child, src);
     }
-    buf.push(')');
 }
 
 /// Render a tree-sitter `QueryError` with the offending fragment and a
