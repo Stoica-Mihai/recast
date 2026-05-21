@@ -306,6 +306,12 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
+    // Build the user-scoped pool once and wrap every parallel phase
+    // (plan + apply, regex / scripted / structural alike) so `--threads N`
+    // is honored uniformly. The previous shape only wrapped the regex
+    // planner, leaving scripted/structural/apply on rayon's global pool.
+    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
+
     if let Some(lang_name) = &cli.structural.lang {
         let template = cli
             .replacement
@@ -319,7 +325,7 @@ fn run(cli: Cli) -> Result<u8> {
         } else {
             return Err(anyhow!("--query or --ast required with --lang"));
         };
-        return run_structural(&cli, lang, &query, template);
+        return pool.install(|| run_structural(&cli, lang, &query, template));
     }
 
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
@@ -337,19 +343,16 @@ fn run(cli: Cli) -> Result<u8> {
     let paths = cli.paths_as_pathbufs();
     let opts = cli.plan_options();
 
-    let result = match &script {
+    let result = pool.install(|| match &script {
         Some(s) => plan_rewrite_scripted(pattern, s, &paths, &opts),
-        None => {
-            let pool = build_pool(cli.threads).context("configure worker thread pool")?;
-            pool.install(|| plan_rewrite(pattern, replacement, &paths, &opts))
-        }
-    };
+        None => plan_rewrite(pattern, replacement, &paths, &opts),
+    });
     let plan = match result {
         Ok(plan) => plan,
         Err(err) => return handle_plan_error(err, cli.output.json),
     };
 
-    dispatch_plan(&cli, &plan)
+    pool.install(|| dispatch_plan(&cli, &plan))
 }
 
 fn resolve_lang(name: &str) -> Result<Language> {
