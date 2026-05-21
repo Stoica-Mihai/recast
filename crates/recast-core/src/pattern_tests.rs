@@ -39,6 +39,16 @@ fn dot_matches_newline_by_default() {
 }
 
 #[test]
+fn convergence_probe_preserves_non_ascii_replacement() {
+    // Regression: replacement_probe walked bytes and pushed each as
+    // `char`, which corrupted multibyte UTF-8. The probe `foo` → `baré`
+    // must yield a `baré` string that the regex `foo` cannot re-match,
+    // i.e. the rewrite is convergent.
+    let p = CompiledPattern::compile("foo", "baré", &PatternOptions::default()).unwrap();
+    assert!(p.is_convergent());
+}
+
+#[test]
 fn single_line_flag_disables_dotall() {
     let p = CompiledPattern::compile(
         "a.b",

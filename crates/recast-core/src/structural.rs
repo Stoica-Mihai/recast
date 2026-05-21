@@ -246,7 +246,7 @@ impl CompiledStructural {
 }
 
 fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<TemplatePart>> {
-    use crate::template_scan::{scan_braced_name, scan_meta_name};
+    use crate::template_scan::{scan_braced_name, scan_meta_name, utf8_char_len};
 
     let mut parts: Vec<TemplatePart> = Vec::new();
     let mut literal = String::new();
@@ -278,8 +278,11 @@ fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<Template
                 continue;
             }
         }
-        literal.push(b as char);
-        i += 1;
+        // Advance a whole UTF-8 codepoint, not a single byte: `b as char`
+        // would mojibake every multibyte glyph in the template.
+        let ch_len = utf8_char_len(b);
+        literal.push_str(&template[i..i + ch_len]);
+        i += ch_len;
     }
     flush_literal(&mut literal, &mut parts);
     Ok(parts)
@@ -480,7 +483,7 @@ pub fn compile_friendly_query(lang: Language, pattern: &str) -> Result<String> {
 }
 
 fn substitute_metavars(pattern: &str) -> String {
-    use crate::template_scan::{scan_ellipsis_name, scan_meta_name};
+    use crate::template_scan::{scan_ellipsis_name, scan_meta_name, utf8_char_len};
 
     let mut out = String::with_capacity(pattern.len());
     let bytes = pattern.as_bytes();
@@ -504,8 +507,12 @@ fn substitute_metavars(pattern: &str) -> String {
                 continue;
             }
         }
-        out.push(b as char);
-        i += 1;
+        // Advance the leading byte of one UTF-8 codepoint, not one byte:
+        // `b as char` would corrupt every non-ASCII character in the
+        // user's `--ast` pattern.
+        let ch_len = utf8_char_len(b);
+        out.push_str(&pattern[i..i + ch_len]);
+        i += ch_len;
     }
     out
 }

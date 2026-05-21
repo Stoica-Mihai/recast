@@ -270,6 +270,40 @@ fn friendly_pattern_ellipsis_preserves_body_text() {
 }
 
 #[test]
+fn template_preserves_non_ascii_literal_bytes() {
+    // Regression: the template scanner walked bytes and pushed each as
+    // `char`, which mojibaked every multibyte UTF-8 sequence. With the
+    // fix the literal `é` (0xC3 0xA9) round-trips unchanged.
+    let source = "fn foo() {}";
+    let out = structural_rewrite(
+        Language::Rust,
+        source,
+        r#"(function_item name: (identifier) @name) @root"#,
+        "fn ${name}_é() {}",
+    )
+    .unwrap();
+    assert_eq!(out.text, "fn foo_é() {}");
+    assert_eq!(out.matches, 1);
+}
+
+#[test]
+fn ast_pattern_preserves_non_ascii_literal_bytes() {
+    // Regression for the byte-walker in `substitute_metavars`: a literal
+    // non-ASCII codepoint in an `--ast` pattern must survive the
+    // metavar-substitution preprocess intact.
+    let source = "// é\nfn foo() {}";
+    let out = structural_rewrite_friendly(
+        Language::Rust,
+        source,
+        "fn $NAME() {}",
+        "fn ${NAME}_é() {}",
+    )
+    .unwrap();
+    assert_eq!(out.text, "// é\nfn foo_é() {}");
+    assert_eq!(out.matches, 1);
+}
+
+#[test]
 fn friendly_pattern_no_matches_leaves_source_intact() {
     let source = "fn foo() {}";
     let out = structural_rewrite_friendly(

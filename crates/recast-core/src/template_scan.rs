@@ -52,6 +52,22 @@ pub(crate) fn scan_braced_name(input: &str, start: usize) -> Option<(usize, usiz
     Some((name_start, name_end, name_end + 1))
 }
 
+/// Width in bytes of the UTF-8 codepoint whose leading byte is `b`.
+/// Callers walking a `&str` byte-by-byte must advance by this width
+/// (not 1) when consuming a non-`$` byte, otherwise multibyte
+/// characters in the template / pattern get split apart. The catch-all
+/// of `1` keeps the function total; a valid `&str` never feeds a
+/// continuation byte into the leading-byte position.
+pub(crate) fn utf8_char_len(b: u8) -> usize {
+    match b {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1,
+    }
+}
+
 fn is_ident_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
