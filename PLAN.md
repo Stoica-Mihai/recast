@@ -231,8 +231,8 @@ the count it owns.
   "kind": "plan",
   "outcome": "changes" | "already_applied",
   "files_scanned": 5,
-  "files_changed": 2,
   "total_matches": 3,
+  "files_changed": 2,
   "changes": [
     { "path": "src/a.rs", "matches": 2 },
     { "path": "src/b.rs", "matches": 1 }
@@ -244,8 +244,8 @@ the count it owns.
   "kind": "apply",
   "outcome": "changes" | "already_applied",
   "files_scanned": 5,
-  "files_written": 2,
-  "total_matches": 3
+  "total_matches": 3,
+  "files_written": 2
 }
 
 // check
@@ -253,8 +253,8 @@ the count it owns.
   "kind": "check",
   "outcome": "changes" | "already_applied",
   "files_scanned": 5,
-  "files_would_change": 2,
-  "total_matches": 3
+  "total_matches": 3,
+  "files_would_change": 2
 }
 
 // error
@@ -268,11 +268,24 @@ the count it owns.
          | "invalid_regex"
          | "invalid_glob"
          | "walk"
-         | "io",
+         | "io"
+         | "script_parse"
+         | "script_runtime"
+         | "unknown_language"
+         | "structural_query"
+         | "structural_template"
+         | "structural_parse"
+         | "locked"
+         | "invalid_threads"
+         | "thread_pool",
   "message": "human-readable description",
   "exit_code": 2 | 3
 }
 ```
+
+`outcome`, `files_scanned`, and `total_matches` are the shared header
+for the non-error variants and appear in that order; the mode-specific
+count (`files_changed` / `files_written` / `files_would_change`) follows.
 
 `error` carries the process exit code so the agent can act without
 re-reading `$?`. `too_few_matches` and `too_many_matches` map to exit 2;

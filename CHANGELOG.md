@@ -5,6 +5,88 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
+## [Unreleased]
+
+Post-`0.1.6` cleanup pass: targeted perf wins across the structural,
+scripted, and commit pipelines plus a round of error-schema and DRY
+hardening surfaced by an internal review.
+
+### Performance
+
+- **Structural mode is no longer per-file recompiled.** The tree-sitter
+  `Query`, capture-index table, and rewrite template are built once
+  per invocation as a shared `CompiledStructural`; only the
+  `Parser` + `QueryCursor` are per-thread. `plan_structural_rewrite`
+  now drives per-file work via `rayon par_iter().map_init(...)`. The
+  rewrite template is pre-parsed into `Vec<TemplatePart::{Literal,
+  Capture { index, name }}>` so capture-name lookup at match time is
+  an index hit, not an O(N) byte scan.
+- **`commit::stage_all` parallel.** Per-file write + `sync_all` runs
+  on rayon workers so kernel fsync overlaps; commit phase stays serial
+  for deterministic rollback. Local measurement: 500-file apply ~9ms,
+  1000-file ~15ms (NVMe, ext4).
+- **`plan_rewrite_scripted` parallel.** Each rayon worker gets a fresh
+  sandboxed Rhai `Engine` via `ScriptRewriter::fresh()`; the compiled
+  AST is shared. Enables `sync` feature on the rhai dep (Rc → Arc
+  internally).
+- **Single-pass match count in `rewrite_text`.** Drops the redundant
+  `find_iter().count()` scan that ran before `replace_all` and the
+  `before.to_owned()` clone on every changed file.
+- **Cheaper regex convergence probe.** The per-file idempotency check
+  uses `Regex::find_iter().count()` on the post-image instead of a
+  full second `replace_all` round.
+- **HashSet parent-dir dedup in fsync.** `best_effort_fsync_parents`
+  was O(N²) via `Vec<PathBuf>::iter().any(...)`; now `HashSet<&Path>`.
+
+### Changed
+
+- **Wire JSON field order shifted.** Plan / Apply / Check reports now
+  emit `outcome`, `files_scanned`, `total_matches` as the shared
+  prefix (extracted into `JsonHeader` with `#[serde(flatten)]`)
+  followed by the mode-specific count. JSON members are unordered
+  per spec so this is semantically identical, but the wire bytes do
+  reorder. Snapshot fixtures updated.
+- **`Error::kind()` returns `ErrorKind` directly.** The
+  `Error → ErrorKind` mapping lives on `impl Error` instead of in
+  `json::error_kind()`; the JSON module re-exports `ErrorKind` from
+  `error` for back-compat.
+- **`Language::from_name` returns `Result<Self, Error>`** instead of
+  `Option<Self>`. Unknown names surface as `Error::UnknownLanguage`
+  from the library boundary.
+- **`RewriteOutcome` shape.** Dropped the `before` field — the caller
+  already owns the pre-image. `changed()` method removed; compare
+  `outcome.after != before` at the call site if needed.
+
+### Added
+
+- **`Error::InvalidThreads` + `Error::ThreadPool` variants** replace
+  the synthetic `Error::Io { path: empty }` wrappers that
+  `parallel::build_pool` used to emit for non-IO failures. JSON
+  surfaces them as `invalid_threads` / `thread_pool` `error` kinds.
+- **`ScriptRewriter::fresh()`** — sibling rewriter, new sandboxed
+  Engine, shared AST. Designed for per-rayon-worker construction.
+- **`template_scan` module** — shared `$NAME` / `${NAME}` / `$$$NAME`
+  placeholder scanners. The regex convergence probe and the
+  structural pattern preprocess + template parser now share one
+  identifier grammar so the three byte walkers can't drift.
+- **`plan::read_text_or_skip_binary`** — single helper that wraps the
+  metadata + max-bytes check + `read_to_string` + UTF-8 skip. Used by
+  both `plan_rewrite` and `plan_structural_rewrite`.
+- **Multi-file structural criterion bench**
+  (`bench_plan_structural_rewrite`) covering 10 / 100 / 500 file
+  fixtures.
+
+### Internal
+
+- `commit::recover_sweep` reports `ignore::Error` via the existing
+  `Error::Walk` variant instead of building a synthetic
+  `Error::Io { path: empty }`.
+- `commit` extracted `parent_dir` / `remove_nonced` helpers; rollback
+  loops collapsed.
+- Binary's `Language::from_name` / `dispatch(plan)` helpers consolidate
+  the apply / check / diff trailer duplicated between `run` and
+  `run_structural`.
+
 ## [0.1.6] — 2026-05-21
 
 First successful crates.io release. v0.1.5's publish step failed
