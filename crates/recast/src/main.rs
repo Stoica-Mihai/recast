@@ -9,8 +9,9 @@ use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, FileChange, Language, PatternOptions, Plan, PlanOptions,
-    PlanOutcome, ScriptRewriter, WalkOptions, apply_changes, build_pool, json, plan_rewrite,
-    plan_rewrite_scripted, recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
+    PlanOutcome, ScriptRewriter, WalkOptions, WorkspaceLock, acquire_workspace_lock, apply_changes,
+    build_pool, json, plan_rewrite, plan_rewrite_scripted, recover_sweep, rewrite_text,
+    rewrite_text_scripted, structural_rewrite,
 };
 
 const EXIT_OK: u8 = 0;
@@ -161,6 +162,14 @@ pub(crate) struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     recover: bool,
 
+    /// Skip the workspace lock check. By default `--apply` / `--recover`
+    /// take an exclusive non-blocking lock on `<root>/.recast.lock` so
+    /// two concurrent rewrites against the same tree don't interleave;
+    /// `--force` bypasses that guard (use only if you know what you're
+    /// doing).
+    #[arg(long, action = ArgAction::SetTrue)]
+    force: bool,
+
     /// Generate a shell completion script and exit.
     #[arg(long, value_name = "SHELL", value_enum)]
     completions: Option<Shell>,
@@ -222,6 +231,25 @@ fn run(cli: Cli) -> Result<u8> {
         completion::print(shell, &mut io::stdout().lock());
         return Ok(EXIT_OK);
     }
+
+    let writes_tree = cli.apply || cli.recover;
+    let _lock_guard: Option<WorkspaceLock> = if writes_tree && !cli.force && !cli.stdin {
+        let first =
+            cli.paths.first().or(cli.pattern.as_ref()).cloned().unwrap_or_else(|| ".".to_owned());
+        let root = PathBuf::from(first);
+        let lock_dir = if root.is_file() {
+            root.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        } else {
+            root
+        };
+        let lock_path = lock_dir.join(".recast.lock");
+        match acquire_workspace_lock(&lock_path) {
+            Ok(g) => Some(g),
+            Err(err) => return Ok(handle_plan_error(err, cli.json)),
+        }
+    } else {
+        None
+    };
 
     if cli.recover {
         // In --recover mode the user may pass any number of paths as

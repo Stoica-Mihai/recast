@@ -7,7 +7,7 @@ members = [
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89"
 license = "MIT"
 authors = ["recast contributors"]
 version = "0.1.3"
@@ -24,6 +24,7 @@ globset = "0.4"
 similar = "2"
 tempfile = "3"
 rayon = "1"
+fs2 = "0.4"
 rhai = { version = "1", default-features = false, features = ["std", "no_custom_syntax", "no_module"] }
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"

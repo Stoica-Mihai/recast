@@ -54,6 +54,11 @@ pub enum Error {
 
     #[error("structural: parse error")]
     StructuralParse,
+
+    #[error(
+        "another recast is already applying to this tree (lockfile {path} held); use --force to override"
+    )]
+    Locked { path: PathBuf },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

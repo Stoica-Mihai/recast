@@ -87,11 +87,11 @@ impl CompiledPattern {
                     }
                     continue;
                 }
-                if next == b'{' {
-                    if let Some(end) = self.replacement[i + 2..].find('}') {
-                        i += 2 + end + 1;
-                        continue;
-                    }
+                if next == b'{'
+                    && let Some(end) = self.replacement[i + 2..].find('}')
+                {
+                    i += 2 + end + 1;
+                    continue;
                 }
             }
             out.push(b as char);

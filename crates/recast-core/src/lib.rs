@@ -9,6 +9,7 @@ mod commit;
 mod error;
 #[cfg(feature = "serde")]
 pub mod json;
+mod lockfile;
 mod parallel;
 mod pattern;
 mod plan;
@@ -28,6 +29,7 @@ mod walker;
 
 pub use commit::{ApplyOutcome, RecoverySummary, apply_changes, recover_sweep};
 pub use error::{Error, Result};
+pub use lockfile::{WorkspaceLock, acquire_workspace_lock};
 pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};
 #[cfg(feature = "script")]

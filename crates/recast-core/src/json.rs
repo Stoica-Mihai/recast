@@ -72,6 +72,7 @@ pub enum ErrorKind {
     StructuralQuery,
     StructuralTemplate,
     StructuralParse,
+    Locked,
 }
 
 impl JsonReport<'_> {
@@ -133,6 +134,7 @@ pub fn error_kind(err: &Error) -> ErrorKind {
         Error::StructuralQuery(_) => ErrorKind::StructuralQuery,
         Error::StructuralTemplate(_) => ErrorKind::StructuralTemplate,
         Error::StructuralParse => ErrorKind::StructuralParse,
+        Error::Locked { .. } => ErrorKind::Locked,
     }
 }
 

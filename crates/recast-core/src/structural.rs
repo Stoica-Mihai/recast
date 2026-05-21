@@ -364,14 +364,14 @@ fn emit_node(
     // Terminal named leaves (identifier, integer_literal, etc.) are
     // constrained to exact text via #eq? predicates so a literal in the
     // pattern doesn't match every same-kind sibling in the source.
-    if node.named_child_count() == 0 {
-        if let Ok(text) = node.utf8_text(src) {
-            let cap = format!("__lit{lit_counter}");
-            *lit_counter += 1;
-            buf.push_str(&format!(" ({}) @{}", node.kind(), cap));
-            predicates.push(format!("(#eq? @{cap} \"{}\")", escape_query_string(text)));
-            return;
-        }
+    if node.named_child_count() == 0
+        && let Ok(text) = node.utf8_text(src)
+    {
+        let cap = format!("__lit{lit_counter}");
+        *lit_counter += 1;
+        buf.push_str(&format!(" ({}) @{}", node.kind(), cap));
+        predicates.push(format!("(#eq? @{cap} \"{}\")", escape_query_string(text)));
+        return;
     }
     buf.push_str(" (");
     buf.push_str(node.kind());
