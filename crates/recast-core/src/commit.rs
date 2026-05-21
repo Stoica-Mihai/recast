@@ -225,6 +225,122 @@ fn best_effort_fsync_parents(committed: &[Committed]) {
     }
 }
 
+/// Summary of a [`recover_sweep`] call.
+#[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct RecoverySummary {
+    pub backups_restored: usize,
+    pub backups_removed: usize,
+    pub temps_removed: usize,
+}
+
+/// Walk every regular file under `roots` and reconcile leftover
+/// `.recast.bak.*` / `.recast.tmp.*` siblings from a previous interrupted
+/// apply.
+///
+/// Rules per target `foo`:
+/// - target exists, only `.foo.recast.bak.*`/`.tmp.*` leftovers → delete leftovers
+/// - target missing, `.foo.recast.bak.N` present → rename newest backup → target,
+///   delete older backups and any temps
+/// - target missing, only temps present → leave untouched (can't decide safely)
+pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
+    use ignore::WalkBuilder;
+
+    let mut iter = if let Some(first) = roots.first() {
+        WalkBuilder::new(first.as_ref())
+    } else {
+        WalkBuilder::new(".")
+    };
+    for extra in roots.iter().skip(1) {
+        iter.add(extra.as_ref());
+    }
+    iter.hidden(false).ignore(false).git_ignore(false).git_global(false).git_exclude(false);
+
+    let mut groups: std::collections::HashMap<PathBuf, RecoveryGroup> =
+        std::collections::HashMap::new();
+    for entry in iter.build() {
+        let entry = entry.map_err(|e| Error::Io {
+            path: PathBuf::new(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+        let path = entry.into_path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(s) => s.to_owned(),
+            None => continue,
+        };
+        if let Some((target_name, kind, nonce)) = parse_sibling_name(&name) {
+            let target = path.parent().map(|p| p.join(&target_name)).unwrap_or_else(PathBuf::new);
+            let g = groups.entry(target).or_default();
+            match kind {
+                SiblingKind::Backup => g.backups.push((nonce, path.clone())),
+                SiblingKind::Temp => g.temps.push((nonce, path.clone())),
+            }
+        }
+    }
+
+    let mut summary = RecoverySummary::default();
+    for (target, mut group) in groups {
+        group.backups.sort_by_key(|(n, _)| *n);
+        group.temps.sort_by_key(|(n, _)| *n);
+        if target.exists() {
+            for (_, p) in &group.backups {
+                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
+                summary.backups_removed += 1;
+            }
+            for (_, p) in &group.temps {
+                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
+                summary.temps_removed += 1;
+            }
+            continue;
+        }
+        if let Some((_, newest)) = group.backups.pop() {
+            fs::rename(&newest, &target)
+                .map_err(|e| Error::Io { path: newest.clone(), source: e })?;
+            summary.backups_restored += 1;
+            for (_, p) in &group.backups {
+                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
+                summary.backups_removed += 1;
+            }
+            for (_, p) in &group.temps {
+                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
+                summary.temps_removed += 1;
+            }
+        }
+    }
+    Ok(summary)
+}
+
+#[derive(Default)]
+struct RecoveryGroup {
+    backups: Vec<(u64, PathBuf)>,
+    temps: Vec<(u64, PathBuf)>,
+}
+
+#[derive(Copy, Clone)]
+enum SiblingKind {
+    Backup,
+    Temp,
+}
+
+fn parse_sibling_name(name: &str) -> Option<(String, SiblingKind, u64)> {
+    let rest = name.strip_prefix('.')?;
+    let idx_recast = rest.find(".recast.")?;
+    let (target, suffix) = rest.split_at(idx_recast);
+    if target.is_empty() {
+        return None;
+    }
+    let suffix = suffix.strip_prefix(".recast.")?;
+    let dot = suffix.find('.')?;
+    let (kind_str, nonce_str) = suffix.split_at(dot);
+    let kind = match kind_str {
+        "bak" => SiblingKind::Backup,
+        "tmp" => SiblingKind::Temp,
+        _ => return None,
+    };
+    let nonce: u64 = nonce_str.strip_prefix('.')?.parse().ok()?;
+    Some((target.to_owned(), kind, nonce))
+}
+
 fn sibling_temp_name(target: &Path, kind: &str) -> String {
     let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let nonce = nonce();

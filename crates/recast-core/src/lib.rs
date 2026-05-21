@@ -19,7 +19,7 @@ mod script;
 mod structural;
 mod walker;
 
-pub use commit::{ApplyOutcome, apply_changes};
+pub use commit::{ApplyOutcome, RecoverySummary, apply_changes, recover_sweep};
 pub use error::{Error, Result};
 pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};

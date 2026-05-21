@@ -114,3 +114,76 @@ fn rollback_leaves_originals_when_stage_fails() {
     assert_eq!(outcome.files_written, 1);
     assert_eq!(fs::read_to_string(&a).unwrap(), "New\n");
 }
+
+#[test]
+fn recover_deletes_orphan_temp_when_target_present() {
+    let dir = TempDir::new().unwrap();
+    let a = dir.path().join("a.txt");
+    let tmp = dir.path().join(".a.txt.recast.tmp.99");
+    fs::write(&a, "Original\n").unwrap();
+    fs::write(&tmp, "Staged but never committed\n").unwrap();
+    let summary = recover_sweep(&[dir.path()]).unwrap();
+    assert_eq!(summary.temps_removed, 1);
+    assert_eq!(summary.backups_restored, 0);
+    assert!(!tmp.exists());
+    assert_eq!(fs::read_to_string(&a).unwrap(), "Original\n");
+}
+
+#[test]
+fn recover_restores_backup_when_target_missing() {
+    let dir = TempDir::new().unwrap();
+    let a = dir.path().join("a.txt");
+    let bak = dir.path().join(".a.txt.recast.bak.42");
+    let tmp = dir.path().join(".a.txt.recast.tmp.42");
+    fs::write(&bak, "Original\n").unwrap();
+    fs::write(&tmp, "New content (was about to land)\n").unwrap();
+    assert!(!a.exists());
+    let summary = recover_sweep(&[dir.path()]).unwrap();
+    assert_eq!(summary.backups_restored, 1);
+    assert_eq!(summary.temps_removed, 1);
+    assert!(!bak.exists());
+    assert!(!tmp.exists());
+    assert_eq!(fs::read_to_string(&a).unwrap(), "Original\n");
+}
+
+#[test]
+fn recover_deletes_orphan_backup_when_target_present() {
+    let dir = TempDir::new().unwrap();
+    let a = dir.path().join("a.txt");
+    let bak = dir.path().join(".a.txt.recast.bak.7");
+    fs::write(&a, "Committed\n").unwrap();
+    fs::write(&bak, "Stale backup\n").unwrap();
+    let summary = recover_sweep(&[dir.path()]).unwrap();
+    assert_eq!(summary.backups_removed, 1);
+    assert_eq!(summary.backups_restored, 0);
+    assert!(!bak.exists());
+    assert_eq!(fs::read_to_string(&a).unwrap(), "Committed\n");
+}
+
+#[test]
+fn recover_ignores_unrelated_files() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("README.md"), "hi\n").unwrap();
+    fs::write(dir.path().join(".gitignore"), "target/\n").unwrap();
+    fs::write(dir.path().join(".env.bak"), "irrelevant\n").unwrap();
+    let summary = recover_sweep(&[dir.path()]).unwrap();
+    assert_eq!(summary.backups_restored, 0);
+    assert_eq!(summary.backups_removed, 0);
+    assert_eq!(summary.temps_removed, 0);
+    assert!(dir.path().join(".env.bak").exists());
+}
+
+#[test]
+fn recover_picks_newest_backup_nonce_when_multiple() {
+    let dir = TempDir::new().unwrap();
+    let a = dir.path().join("a.txt");
+    let bak_old = dir.path().join(".a.txt.recast.bak.1");
+    let bak_new = dir.path().join(".a.txt.recast.bak.999");
+    fs::write(&bak_old, "older snapshot\n").unwrap();
+    fs::write(&bak_new, "newer snapshot\n").unwrap();
+    assert!(!a.exists());
+    let summary = recover_sweep(&[dir.path()]).unwrap();
+    assert_eq!(summary.backups_restored, 1);
+    assert_eq!(summary.backups_removed, 1);
+    assert_eq!(fs::read_to_string(&a).unwrap(), "newer snapshot\n");
+}

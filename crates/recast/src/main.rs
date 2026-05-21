@@ -10,7 +10,7 @@ use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
     ScriptRewriter, WalkOptions, apply_changes, build_pool, json, plan_rewrite,
-    plan_rewrite_scripted, rewrite_text, rewrite_text_scripted, structural_rewrite,
+    plan_rewrite_scripted, recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
 };
 
 const EXIT_OK: u8 = 0;
@@ -23,12 +23,12 @@ const EXIT_INTERNAL: u8 = 3;
 pub(crate) struct Cli {
     /// Regex pattern. Multi-line by default. Use --literal for plain-string
     /// matching.
-    #[arg(required_unless_present = "completions")]
+    #[arg(required_unless_present_any = ["completions", "recover"])]
     pattern: Option<String>,
 
     /// Replacement template. $1, $2, ${name} interpolated unless --literal
     /// is set.
-    #[arg(required_unless_present = "completions")]
+    #[arg(required_unless_present_any = ["completions", "recover"])]
     replacement: Option<String>,
 
     /// Paths or globs to scan. Defaults to the current directory if omitted.
@@ -147,6 +147,14 @@ pub(crate) struct Cli {
     #[arg(long, value_name = "QUERY", requires = "lang")]
     query: Option<String>,
 
+    /// Scan PATHS for leftover `.recast.bak.*` / `.recast.tmp.*`
+    /// siblings from a previous interrupted --apply and reconcile them
+    /// (restore backups when the target is missing; delete stale temps
+    /// and backups when the target is present). Skips all rewrite
+    /// modes; PATTERN/REPLACEMENT are not consulted.
+    #[arg(long, action = ArgAction::SetTrue)]
+    recover: bool,
+
     /// Generate a shell completion script and exit.
     #[arg(long, value_name = "SHELL", value_enum)]
     completions: Option<Shell>,
@@ -206,6 +214,32 @@ fn init_tracing() {
 fn run(cli: Cli) -> Result<u8> {
     if let Some(shell) = cli.completions {
         completion::print(shell, &mut io::stdout().lock());
+        return Ok(EXIT_OK);
+    }
+
+    if cli.recover {
+        // In --recover mode the user may pass any number of paths as
+        // positional arguments. Clap binds them to the `pattern` and
+        // `replacement` slots first (they're declared `Option`), so we
+        // fold them back into the path list before sweeping.
+        let mut paths: Vec<PathBuf> = Vec::new();
+        if let Some(p) = cli.pattern.as_deref() {
+            paths.push(PathBuf::from(p));
+        }
+        if let Some(p) = cli.replacement.as_deref() {
+            paths.push(PathBuf::from(p));
+        }
+        for p in &cli.paths {
+            paths.push(PathBuf::from(p));
+        }
+        if paths.len() > 1 && paths.last().map(|p| p.as_os_str() == ".").unwrap_or(false) {
+            paths.pop();
+        }
+        let summary = recover_sweep(&paths).context("recover sweep")?;
+        eprintln!(
+            "recast: recovered {} backup(s), removed {} stale backup(s), removed {} temp(s)",
+            summary.backups_restored, summary.backups_removed, summary.temps_removed
+        );
         return Ok(EXIT_OK);
     }
 

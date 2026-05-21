@@ -242,6 +242,22 @@ fn structural_mode_unknown_language_errors() {
 }
 
 #[test]
+fn recover_flag_restores_orphan_backup() {
+    let dir = TempDir::new().unwrap();
+    let a = dir.path().join("a.txt");
+    let bak = dir.path().join(".a.txt.recast.bak.42");
+    fs::write(&bak, "Original\n").unwrap();
+    recast()
+        .arg("--recover")
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("recovered 1 backup"));
+    assert!(!bak.exists());
+    assert_eq!(fs::read_to_string(&a).unwrap(), "Original\n");
+}
+
+#[test]
 fn completions_flag_outputs_shell_script() {
     recast()
         .arg("--completions")
