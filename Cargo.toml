@@ -11,7 +11,10 @@ rust-version = "1.89"
 license = "MIT"
 authors = ["recast contributors"]
 version = "0.1.3"
-publish = false
+publish = true
+repository = "https://github.com/Stoica-Mihai/recast"
+homepage = "https://stoica-mihai.github.io/recast/"
+readme = "README.md"
 
 [workspace.dependencies]
 anyhow = "1"

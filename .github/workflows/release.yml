@@ -82,6 +82,34 @@ jobs:
           name: recast-${{ matrix.target }}
           path: dist/*
 
+  publish-crates:
+    name: publish to crates.io
+    needs: build
+    runs-on: ubuntu-latest
+    # Tag pushes always publish; manual workflow_dispatch reruns
+    # against an existing tag don't, so we don't try to re-publish
+    # an already-shipped version.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: publish-crates
+      - name: cargo publish recast-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p recast-core --token "$CARGO_REGISTRY_TOKEN"
+      - name: wait for index propagation
+        run: sleep 90
+      - name: cargo publish recast-cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p recast-cli --token "$CARGO_REGISTRY_TOKEN"
+
   publish:
     name: attach to release
     needs: build

@@ -918,7 +918,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "recast"
+name = "recast-cli"
 version = "0.1.3"
 dependencies = [
  "anyhow",

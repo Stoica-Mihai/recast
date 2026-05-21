@@ -5,6 +5,18 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
+## [Unreleased]
+
+### Added
+
+- Published to crates.io as `recast-core` (library) and `recast-cli`
+  (binary). The bare `recast` name on crates.io is already taken by
+  an unrelated serialization-format crate; the installed binary is
+  still called `recast`. Install via `cargo install recast-cli`.
+- Tag-pushed releases now publish both crates automatically via a
+  new `publish-crates` job in `.github/workflows/release.yml`,
+  gated on the `CARGO_REGISTRY_TOKEN` repository secret.
+
 ## [0.1.3] — 2026-05-21
 
 Big release bundling every prod-readiness item landed since v0.1.2:

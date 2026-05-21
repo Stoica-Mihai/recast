@@ -43,13 +43,24 @@ Download the matching artifact for your platform from
 The `musl` builds are statically linked — drop into an Alpine container
 or distroless image without a glibc dependency.
 
+### Cargo install (from crates.io)
+
+```bash
+cargo install recast-cli              # full feature set
+cargo install recast-cli --no-default-features --features lang-rust  # slim
+```
+
+The crate on crates.io is named `recast-cli` (the bare `recast` name was
+already taken by an unrelated serialization-format library). The
+installed binary is still called `recast` — that's the command name
+everything in this README uses.
+
 ### Cargo install (from source)
 
 ```bash
 git clone https://github.com/Stoica-Mihai/recast
 cd recast
 cargo install --path crates/recast            # full feature set
-cargo install --path crates/recast --no-default-features --features lang-rust  # slim
 ```
 
 Stock install ships every grammar, the Rhai script engine, and JSON
