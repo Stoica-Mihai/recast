@@ -50,13 +50,6 @@ struct Committed {
 /// remaining staged temps are deleted. The on-disk tree ends up either
 /// fully rewritten or bit-identical to the pre-image.
 pub fn apply_changes(plan: &Plan) -> Result<ApplyOutcome> {
-    apply_inner(plan, |_| Ok(()))
-}
-
-pub(crate) fn apply_inner<F>(plan: &Plan, between_commits: F) -> Result<ApplyOutcome>
-where
-    F: Fn(usize) -> Result<()>,
-{
     if plan.changes.is_empty() {
         debug!("apply: no changes; nothing to do");
         return Ok(ApplyOutcome { files_written: 0, total_matches: plan.total_matches });
@@ -66,7 +59,15 @@ where
     let staged = stage_all(&plan.changes)?;
     debug!(files = staged.len(), "apply: stage phase complete");
 
-    match commit_all(&staged, &between_commits) {
+    finalize_apply(plan, &staged, commit_all(&staged))
+}
+
+fn finalize_apply(
+    plan: &Plan,
+    staged: &[Staged],
+    result: std::result::Result<Vec<Committed>, CommitFailure>,
+) -> Result<ApplyOutcome> {
+    match result {
         Ok(committed) => {
             debug!(files = committed.len(), "apply: commit phase complete");
             best_effort_cleanup_backups(&committed);
@@ -83,10 +84,25 @@ where
                 "apply: commit failed, rolling back"
             );
             rollback_committed(&committed);
-            cleanup_remaining_staged(&staged, remaining_staged);
+            cleanup_remaining_staged(staged, remaining_staged);
             Err(error)
         }
     }
+}
+
+/// Test-only entry point that lets a closure fire between each per-file
+/// commit so the rollback path can be exercised. Production code goes
+/// through [`apply_changes`], which has no hook in its signature.
+#[cfg(test)]
+fn apply_inner<F>(plan: &Plan, between_commits: F) -> Result<ApplyOutcome>
+where
+    F: Fn(usize) -> Result<()>,
+{
+    if plan.changes.is_empty() {
+        return Ok(ApplyOutcome { files_written: 0, total_matches: plan.total_matches });
+    }
+    let staged = stage_all(&plan.changes)?;
+    finalize_apply(plan, &staged, commit_all_with_hook(&staged, &between_commits))
 }
 
 fn stage_all(changes: &[FileChange]) -> Result<Vec<Staged>> {
@@ -154,7 +170,21 @@ struct CommitFailure {
     error: Error,
 }
 
-fn commit_all<F>(
+fn commit_all(staged: &[Staged]) -> std::result::Result<Vec<Committed>, CommitFailure> {
+    let mut committed: Vec<Committed> = Vec::with_capacity(staged.len());
+    for (i, s) in staged.iter().enumerate() {
+        match commit_one(s) {
+            Ok(c) => committed.push(c),
+            Err(error) => {
+                return Err(CommitFailure { committed, remaining_staged: staged.len() - i, error });
+            }
+        }
+    }
+    Ok(committed)
+}
+
+#[cfg(test)]
+fn commit_all_with_hook<F>(
     staged: &[Staged],
     between_commits: &F,
 ) -> std::result::Result<Vec<Committed>, CommitFailure>
