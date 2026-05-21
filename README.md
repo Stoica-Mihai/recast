@@ -20,8 +20,10 @@ humans for mechanical refactors.
    `--ast`).
 
 Status: alpha (v0.1.3). All phases of [`PLAN.md`](./PLAN.md) landed.
-Pre-built binaries on the [GitHub Releases](https://github.com/Stoica-Mihai/recast/releases) page.
-See [`AGENTS.md`](./AGENTS.md) for the operating manual.
+
+- 📦 Pre-built binaries: [GitHub Releases](https://github.com/Stoica-Mihai/recast/releases)
+- 📖 Hosted docs: <https://stoica-mihai.github.io/recast/>
+- 🛠 Operating manual: [`AGENTS.md`](./AGENTS.md)
 
 ## Install
 
