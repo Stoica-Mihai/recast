@@ -1,8 +1,10 @@
 # recast
 
-**Status:** Pre-implementation. This document is the only source of truth
-until the first code lands. Future contributors (human or LLM agent) should
-treat this as the project charter and update it in lockstep with the
+**Status:** Alpha. Phases 0–4 landed; CLI is usable end-to-end with
+atomic apply, idempotency check, match-count guard, type/glob filters,
+shell completions, and a schema-locked JSON output. Phases 5–6 (script
+DSL, structural matching) are still pre-implementation. Treat this
+document as the project charter and update it in lockstep with the
 implementation.
 
 ## 1. What `recast` is
@@ -309,20 +311,31 @@ Data flow per invocation:
 
 ## 9. Implementation phases
 
-**Phase 0 — scaffold.** Workspace layout, CI workflow, `.github/workflows/ci.yml`
-mirroring amux. License + README pointing at this PLAN.md.
+**Phase 0 — scaffold. [landed]** Workspace layout, CI workflow,
+`.github/workflows/ci.yml` mirroring amux. License + README pointing at
+this PLAN.md.
 
-**Phase 1 — minimal MVP.** Regex find/replace across paths, unified diff
-preview, no atomic apply yet (just `--apply` writing each file in-place,
-no rollback). Match-count guard. Idempotency check.
+**Phase 1 — minimal MVP. [landed]** Regex find/replace across paths,
+unified diff preview, `--apply` writing files, match-count guard,
+idempotency (convergence) check, parallel scan via `rayon`.
 
-**Phase 2 — atomicity.** Two-phase commit. Crash-safe writes. Tests that
-inject a panic mid-loop and verify the tree is unchanged.
+**Phase 2 — atomicity. [landed]** Two-phase commit (sibling temp +
+fsync + rename), per-file backup for rollback, post-commit cleanup,
+parent-dir fsync. Test injects a mid-commit failure and verifies the
+tree is restored bit-identical.
 
-**Phase 3 — ignore rules + globs.** `ignore` crate integration; `--type`,
-`-g` flags.
+**Phase 3 — ignore rules + globs. [landed]** `ignore` crate integration;
+`-t/--type`, `-T/--type-not`, `-g/--glob`, `--no-ignore`, `--hidden`.
 
-**Phase 4 — JSON output, exit-code spec lockdown.** Agent-friendly mode.
+**Phase 4 — JSON output, exit-code spec lockdown. [landed]** Schema in
+§7.1, snapshot-locked via `insta` in
+`crates/recast-core/src/snapshots/`. Error reports carry
+machine-readable `error` kind plus the process `exit_code`.
+
+**Beyond phase 4 (landed extras).** `--threads N` honoring rayon worker
+count, `--completions <shell>` for bash/zsh/fish/elvish/powershell,
+unified-diff path-label cleanup (strips leading `./`), binary-file skip
+regression test, README rewrite, AGENTS.md TDD + DRY rules.
 
 **Phase 5 — script mode (v2).** Embed `rhai` or a small `expr` DSL for
 conditional replacements.
