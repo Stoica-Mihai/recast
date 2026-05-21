@@ -177,15 +177,32 @@ impl CompiledStructural {
         let mut hits: Vec<Hit> = Vec::new();
         let mut iter = cursor.matches(&self.query, tree.root_node(), bytes);
         while let Some(m) = iter.next() {
-            let primary_idx = self
-                .root_capture_idx
-                .unwrap_or_else(|| m.captures.iter().map(|c| c.index as usize).max().unwrap_or(0));
-            let primary =
-                m.captures.iter().find(|c| c.index as usize == primary_idx).ok_or_else(|| {
-                    Error::StructuralQuery(format!(
-                        "match did not bind primary capture index {primary_idx}"
-                    ))
-                })?;
+            let primary = match self.root_capture_idx {
+                Some(idx) => {
+                    m.captures.iter().find(|c| c.index as usize == idx).ok_or_else(|| {
+                        Error::StructuralQuery(format!(
+                            "match did not bind primary capture index {idx}"
+                        ))
+                    })?
+                }
+                // No `@root`: pick the outermost-by-byte-range capture
+                // deterministically (smallest start, then largest end,
+                // then lowest capture index). The previous fallback of
+                // "capture with the largest index" was declaration-order
+                // dependent and gave subtly wrong replacements when a
+                // query bound multiple captures without an explicit root.
+                None => m
+                    .captures
+                    .iter()
+                    .min_by(|a, b| {
+                        a.node
+                            .start_byte()
+                            .cmp(&b.node.start_byte())
+                            .then_with(|| b.node.end_byte().cmp(&a.node.end_byte()))
+                            .then_with(|| a.index.cmp(&b.index))
+                    })
+                    .ok_or_else(|| Error::StructuralQuery("match bound no captures".into()))?,
+            };
             let replacement = self.render(source, m.captures)?;
             hits.push(Hit {
                 start: primary.node.start_byte(),
