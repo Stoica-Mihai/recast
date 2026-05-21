@@ -1,0 +1,20 @@
+[book]
+authors = ["recast contributors"]
+language = "en"
+multilingual = false
+src = "src"
+title = "recast"
+description = "CLI for safe, atomic, transparent multi-file text rewrites."
+
+[build]
+build-dir = "../target/book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/Stoica-Mihai/recast"
+edit-url-template = "https://github.com/Stoica-Mihai/recast/edit/main/docs/{path}"
+
+[output.html.fold]
+enable = true
+level = 1

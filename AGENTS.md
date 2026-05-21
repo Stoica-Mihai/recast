@@ -148,7 +148,7 @@ CI runs `fmt --check`, `clippy -D warnings`, `test --workspace --all-features` o
 - **DRY enforced.** Every feature, bug fix, refactor, or test edit runs through the `/engineering-principles:dry-principle` skill. Before writing new code, search for an existing helper, type, or pattern that already solves the sub-problem; lift it into a shared spot if it's now used in two places. Mechanical copy-paste between modules is a reject.
 - **Verify before claiming done.** Run the relevant tests. Re-read the diff. Report results, not intentions.
 - **Commit immediately after each landed feature.** Once `fmt --check` / `clippy -D warnings` / `test --workspace` pass on a scoped change, create the commit without waiting for further approval. Do not batch multiple features into one approval gate. Pushing remains opt-in.
-- **Keep `README.md`, `CHANGELOG.md`, and `PLAN.md` in sync with the code.** The README is the user-facing front door; the changelog is the release-notes source the release workflow reads; the plan tracks phase status. Drift in any of them after a feature lands is a bug.
+- **Keep `README.md`, `CHANGELOG.md`, `PLAN.md`, and `docs/` (mdBook) in sync with the code.** The README is the user-facing front door; the changelog is the release-notes source the release workflow reads; the plan tracks phase status; the mdBook under `docs/` is the hosted documentation site published to GitHub Pages by `.github/workflows/docs.yml`. Drift in any of them after a feature lands is a bug.
 
 ## 12. Release process
 
