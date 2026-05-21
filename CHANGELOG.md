@@ -5,6 +5,46 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
+## [Unreleased]
+
+Post-`0.1.7` follow-through: residual cleanup-pass items + a CI
+deprecation fix flagged by the 0.1.7 release run.
+
+### Changed
+
+- **`commit::apply_inner` hidden behind `#[cfg(test)]`.** Was
+  `pub(crate)` so the rollback test could inject a mid-commit
+  failure; that leaked the test-only seam into the production API.
+  Production `apply_changes` and `commit_all` carry no hook
+  references; `apply_inner` + `commit_all_with_hook` exist only
+  under `cfg(test)`. The two paths share a `finalize_apply` helper.
+- **Per-apply `NonceGen`** replaces the static `AtomicU64` counter
+  inside `fn nonce()`. The struct is constructed once per
+  `apply_changes` call and threaded by reference through stage and
+  commit phases; sibling-filename uniqueness across rayon workers
+  is unchanged, but the state is scoped to the invocation instead
+  of living in static mutable memory.
+- **`emit_diff` / `emit_apply` narrowed** from `&Cli` to
+  `&OutputOptions, &Plan`. Dropped the transitive dependency on
+  GuardOptions and StructuralCli substructs that those helpers
+  never touched.
+
+### Fixed
+
+- **`recover_sweep` skips parentless sibling entries.** Previously
+  fell back to `PathBuf::new()` as the HashMap target key when
+  `path.parent()` returned None, silently bucketing unrelated
+  parentless siblings together. Skip with a `trace!` line instead
+  so recovery never makes cross-target decisions.
+
+### CI
+
+- **`actions/checkout` / `actions/upload-artifact` /
+  `actions/download-artifact` bumped from `@v4` to `@v5`** across
+  audit, ci, docs, and release workflows. Closes the Node 20
+  deprecation annotation surfaced by the v0.1.7 release run before
+  the 2026-06-02 forced-Node-24 cutover.
+
 ## [0.1.7] — 2026-05-21
 
 Post-`0.1.6` cleanup pass: targeted perf wins across the structural,
