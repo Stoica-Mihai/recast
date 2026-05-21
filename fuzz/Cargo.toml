@@ -1,0 +1,33 @@
+[package]
+name = "recast-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+recast-core = { path = "../crates/recast-core", default-features = false, features = ["script", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-bash", "lang-go", "lang-json", "lang-md"] }
+
+[[bin]]
+name = "compile_friendly_query"
+path = "fuzz_targets/compile_friendly_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "structural_rewrite_friendly"
+path = "fuzz_targets/structural_rewrite_friendly.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pattern_compile_convergence"
+path = "fuzz_targets/pattern_compile_convergence.rs"
+test = false
+doc = false
+bench = false

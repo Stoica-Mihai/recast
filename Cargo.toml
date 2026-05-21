@@ -4,6 +4,9 @@ members = [
     "crates/recast",
     "crates/recast-core",
 ]
+exclude = [
+    "fuzz",
+]
 
 [workspace.package]
 edition = "2024"
