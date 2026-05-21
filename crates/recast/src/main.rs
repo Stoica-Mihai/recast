@@ -8,8 +8,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
-    CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
-    ScriptRewriter, WalkOptions, apply_changes, build_pool, json, plan_rewrite,
+    CompiledPattern, Error as CoreError, FileChange, Language, PatternOptions, Plan, PlanOptions,
+    PlanOutcome, ScriptRewriter, WalkOptions, apply_changes, build_pool, json, plan_rewrite,
     plan_rewrite_scripted, recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
 };
 
@@ -386,10 +386,31 @@ fn run_structural(cli: &Cli, lang_name: &str, query: &str, template: &str) -> Re
     }
 
     if cli.apply {
-        for (path, _before, after, _matches) in &files_changed {
-            std::fs::write(path, after).context(format!("write {}", path.display()))?;
-        }
-        eprintln!("recast: applying {} file(s), {} match(es).", files_changed.len(), total_matches);
+        let changes: Vec<FileChange> = files_changed
+            .iter()
+            .map(|(path, before, after, matches)| {
+                let label = recast_core::label_for_path(path);
+                let diff = recast_core::unified_diff(&label, before, after);
+                FileChange {
+                    path: path.clone(),
+                    matches: *matches,
+                    before: before.clone(),
+                    after: after.clone(),
+                    diff,
+                }
+            })
+            .collect();
+        let plan = Plan {
+            changes,
+            total_matches,
+            files_scanned: files.len(),
+            outcome: PlanOutcome::Changes,
+        };
+        let outcome = apply_changes(&plan).context("apply changes")?;
+        eprintln!(
+            "recast: applying {} file(s), {} match(es).",
+            outcome.files_written, outcome.total_matches
+        );
         return Ok(EXIT_OK);
     }
 
