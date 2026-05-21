@@ -30,8 +30,6 @@ jobs:
             os: macos-latest
           - target: aarch64-apple-darwin
             os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -56,8 +54,7 @@ jobs:
           else
             cargo build --release --all-features --target ${{ matrix.target }} -p recast-cli
           fi
-      - name: package (unix)
-        if: matrix.os != 'windows-latest'
+      - name: package
         shell: bash
         run: |
           name="recast-${GITHUB_REF_NAME}-${{ matrix.target }}"
@@ -66,17 +63,6 @@ jobs:
           cp README.md LICENSE CHANGELOG.md staging/
           tar -czf "dist/${name}.tar.gz" -C staging .
           (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
-      - name: package (windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          $name = "recast-$env:GITHUB_REF_NAME-${{ matrix.target }}"
-          New-Item -ItemType Directory -Force -Path dist, staging | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/recast.exe" staging/
-          Copy-Item README.md, LICENSE, CHANGELOG.md staging/
-          Compress-Archive -Path staging/* -DestinationPath "dist/$name.zip"
-          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name.zip" | Out-File -Encoding ascii "dist/$name.zip.sha256"
       - uses: actions/upload-artifact@v5
         with:
           name: recast-${{ matrix.target }}

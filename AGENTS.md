@@ -10,7 +10,7 @@ Operating manual for AI agents and human contributors working in this repo.
 
 ## 2. Status
 
-Alpha (v0.1.3). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries ship for Linux (x86_64/aarch64, gnu + musl), macOS (x86_64/aarch64), and Windows (x86_64) via the `release.yml` workflow. Update `PLAN.md` and `CHANGELOG.md` in lockstep with any further feature work.
+Alpha (v0.1.7). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries ship for Linux (x86_64/aarch64, gnu + musl) and macOS (x86_64/aarch64) via the `release.yml` workflow. Windows is not currently shipped — the `#[cfg(windows)]` source carve-outs still compile, but no CI gate or release artifact targets it. Update `PLAN.md` and `CHANGELOG.md` in lockstep with any further feature work.
 
 ## 3. Thesis
 
@@ -76,7 +76,7 @@ Cross-crate types live in `recast-core`. The binary depends on the library, neve
 - `regex` crate. Feature-gate `fancy-regex` only if lookaround proves necessary.
 - `ignore` crate (powers ripgrep) for `.gitignore` semantics; `globset` for explicit `-g` glob arguments.
 - `similar` for diff generation and unified hunks.
-- `tempfile` for sibling temp files. fsync via `std::fs::File::sync_all()` (cross-platform; replaced `rustix` after the Windows port).
+- `tempfile` for sibling temp files. fsync via `std::fs::File::sync_all()` (cross-platform).
 - `rayon` for parallel per-file work, with a dedicated `ThreadPool` so `--threads N` is honored without touching the global pool.
 - `rhai` (feature `script`) for the scripted-replacement callback — default features off, std/no_module/no_custom_syntax.
 - `tree-sitter` + per-language grammars (`tree-sitter-rust`, `-typescript`, `-javascript`, `-python`, `-bash`, `-go`, `-json`, `-md`) gated by `lang-*` features. The umbrella `lang-all` enables all.
@@ -112,7 +112,7 @@ cargo run -p recast -- --script bump.rhai '(\d+)' '' src/version.txt
 cargo run -p recast -- --recover src/
 ```
 
-CI runs `fmt --check`, `clippy -D warnings`, `test --workspace --all-features` on Linux + macOS + Windows; `cargo doc` with `-D warnings`; and `cargo deny check bans licenses sources`. The release workflow cross-compiles seven targets and uploads them to the matching GitHub Release with notes auto-extracted from the `CHANGELOG.md` section for that tag.
+CI runs `fmt --check`, `clippy -D warnings`, `test --workspace --all-features` on Linux + macOS; `cargo doc` with `-D warnings`; and `cargo deny check bans licenses sources`. The release workflow cross-compiles six targets and uploads them to the matching GitHub Release with notes auto-extracted from the `CHANGELOG.md` section for that tag.
 
 ## 9. Coding standards
 
@@ -155,7 +155,7 @@ CI runs `fmt --check`, `clippy -D warnings`, `test --workspace --all-features` o
 
 Tag pushes (`v*`) trigger `.github/workflows/release.yml`:
 
-1. **build job** matrix — 7 targets, mixing native (linux gnu x86_64, macOS x86_64/aarch64, windows-msvc x86_64) and `cross`-driven (linux gnu aarch64, linux musl x86_64/aarch64). Each leg builds with `--all-features`, packages binary + README + LICENSE + CHANGELOG into a `.tar.gz` (or `.zip` on Windows), and emits a `.sha256` sidecar.
+1. **build job** matrix — 6 targets, mixing native (linux gnu x86_64, macOS x86_64/aarch64) and `cross`-driven (linux gnu aarch64, linux musl x86_64/aarch64). Each leg builds with `--all-features`, packages binary + README + LICENSE + CHANGELOG into a `.tar.gz`, and emits a `.sha256` sidecar. Windows is not currently part of the release matrix.
 2. **publish job** downloads every artifact, extracts the `## [<version>]` section from `CHANGELOG.md`, and uploads to the matching release via `gh release create --notes-file` (new) or `gh release edit --notes-file` (existing).
 
 To cut a release:

@@ -46,7 +46,6 @@ Download the matching artifact for your platform from
 | Linux aarch64     | `aarch64-unknown-linux-gnu`, `aarch64-unknown-linux-musl`|
 | macOS x86_64      | `x86_64-apple-darwin`                                    |
 | macOS Apple Silicon | `aarch64-apple-darwin`                                 |
-| Windows x86_64    | `x86_64-pc-windows-msvc`                                 |
 
 The `musl` builds are statically linked — drop into an Alpine container
 or distroless image without a glibc dependency.
@@ -275,7 +274,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
-122 tests on Linux + macOS + Windows. Proptest harness covers every
+127 tests on Linux + macOS. Proptest harness covers every
 public entry point with randomized input.
 
 ## License

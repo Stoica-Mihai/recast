@@ -13,7 +13,6 @@ Grab the matching artifact from the
 | Linux aarch64 (musl)   | `recast-vX.Y.Z-aarch64-unknown-linux-musl.tar.gz`          |
 | macOS Intel            | `recast-vX.Y.Z-x86_64-apple-darwin.tar.gz`                 |
 | macOS Apple Silicon    | `recast-vX.Y.Z-aarch64-apple-darwin.tar.gz`                |
-| Windows x86_64         | `recast-vX.Y.Z-x86_64-pc-windows-msvc.zip`                 |
 
 The `musl` builds are statically linked — drop into Alpine, distroless,
 or scratch containers without a glibc dependency.

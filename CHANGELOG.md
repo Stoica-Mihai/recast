@@ -45,6 +45,17 @@ deprecation fix flagged by the 0.1.7 release run.
   deprecation annotation surfaced by the v0.1.7 release run before
   the 2026-06-02 forced-Node-24 cutover.
 
+### Removed
+
+- **Windows from the CI + release matrix.** No longer running
+  `cargo test` on `windows-latest`; no longer cross-compiling
+  `x86_64-pc-windows-msvc` artifacts. The release matrix shrinks
+  from seven targets to six (Linux gnu/musl × x86_64/aarch64 plus
+  macOS x86_64/aarch64). Source-level `#[cfg(windows)]` carve-outs
+  remain so anyone who wants to compile locally on Windows still
+  can — but pre-built binaries and CI green lights no longer cover
+  the platform.
+
 ## [0.1.7] — 2026-05-21
 
 Post-`0.1.6` cleanup pass: targeted perf wins across the structural,
