@@ -108,7 +108,7 @@ where
     }
     let nonces = NonceGen::new();
     let staged = stage_all(&plan.changes, &nonces)?;
-    finalize_apply(plan, &staged, commit_all_with_hook(&staged, &nonces, &between_commits))
+    finalize_apply(plan, &staged, commit_all_with(&staged, &nonces, between_commits))
 }
 
 fn stage_all(changes: &[FileChange], nonces: &NonceGen) -> Result<Vec<Staged>> {
@@ -183,23 +183,13 @@ fn commit_all(
     staged: &[Staged],
     nonces: &NonceGen,
 ) -> std::result::Result<Vec<Committed>, CommitFailure> {
-    let mut committed: Vec<Committed> = Vec::with_capacity(staged.len());
-    for (i, s) in staged.iter().enumerate() {
-        match commit_one(s, nonces) {
-            Ok(c) => committed.push(c),
-            Err(error) => {
-                return Err(CommitFailure { committed, remaining_staged: staged.len() - i, error });
-            }
-        }
-    }
-    Ok(committed)
+    commit_all_with(staged, nonces, |_| Ok(()))
 }
 
-#[cfg(test)]
-fn commit_all_with_hook<F>(
+fn commit_all_with<F>(
     staged: &[Staged],
     nonces: &NonceGen,
-    between_commits: &F,
+    between_commits: F,
 ) -> std::result::Result<Vec<Committed>, CommitFailure>
 where
     F: Fn(usize) -> Result<()>,
