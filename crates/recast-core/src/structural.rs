@@ -115,6 +115,15 @@ enum TemplatePart {
     Capture { index: usize, name: String },
 }
 
+/// One match in [`CompiledStructural::apply`]: byte range the rewrite
+/// occupies in the source plus the rendered replacement text. Sorted by
+/// `start` before splicing; overlapping later hits are skipped.
+struct Hit {
+    start: usize,
+    end: usize,
+    replacement: String,
+}
+
 /// A compiled structural-rewrite job: language, query, capture index
 /// table, and the rewrite template pre-resolved to a sequence of
 /// literal/capture parts. Built once per invocation and applied to every
@@ -165,7 +174,7 @@ impl CompiledStructural {
         let tree = parser.parse(source, None).ok_or(Error::StructuralParse)?;
         let bytes = source.as_bytes();
 
-        let mut hits: Vec<(usize, usize, String)> = Vec::new();
+        let mut hits: Vec<Hit> = Vec::new();
         let mut iter = cursor.matches(&self.query, tree.root_node(), bytes);
         while let Some(m) = iter.next() {
             let primary_idx = self
@@ -177,28 +186,29 @@ impl CompiledStructural {
                         "match did not bind primary capture index {primary_idx}"
                     ))
                 })?;
-            let start = primary.node.start_byte();
-            let end = primary.node.end_byte();
-
             let replacement = self.render(source, m.captures)?;
-            hits.push((start, end, replacement));
+            hits.push(Hit {
+                start: primary.node.start_byte(),
+                end: primary.node.end_byte(),
+                replacement,
+            });
         }
-        hits.sort_by_key(|h| h.0);
+        hits.sort_by_key(|h| h.start);
 
         // Reserve source.len() plus the per-hit (replacement - range) delta
         // so the splice loop doesn't realloc when replacements grow the text.
         let extra: usize =
-            hits.iter().map(|(start, end, r)| r.len().saturating_sub(end - start)).sum();
+            hits.iter().map(|h| h.replacement.len().saturating_sub(h.end - h.start)).sum();
         let mut out = String::with_capacity(source.len() + extra);
         let mut cursor_byte = 0usize;
         let mut applied = 0usize;
-        for (start, end, replacement) in &hits {
-            if *start < cursor_byte {
+        for hit in &hits {
+            if hit.start < cursor_byte {
                 continue;
             }
-            out.push_str(&source[cursor_byte..*start]);
-            out.push_str(replacement);
-            cursor_byte = *end;
+            out.push_str(&source[cursor_byte..hit.start]);
+            out.push_str(&hit.replacement);
+            cursor_byte = hit.end;
             applied += 1;
         }
         out.push_str(&source[cursor_byte..]);
