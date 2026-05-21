@@ -274,8 +274,26 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
-127 tests on Linux + macOS. Proptest harness covers every
-public entry point with randomized input.
+130 tests on Linux + macOS. Proptest harness covers every public
+entry point with randomized input.
+
+### Benchmarks
+
+```bash
+cargo bench -p recast-core --features lang-rust,script --bench engine
+```
+
+Criterion suite under `crates/recast-core/benches/engine.rs` measures
+`plan_rewrite`, `plan_structural_rewrite`, `pattern_compile`, and the
+structural rewrite hot path. HTML reports land under
+`target/criterion/`.
+
+### Fuzzing
+
+The `fuzz/` crate (excluded from the workspace) holds `cargo-fuzz`
+targets for the byte-walker / parser / compiler surfaces. Nightly +
+`cargo-fuzz` required; see [`fuzz/README.md`](./fuzz/README.md) for
+the target list and run instructions.
 
 ## License
 
