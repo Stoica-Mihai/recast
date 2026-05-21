@@ -242,6 +242,46 @@ fn structural_mode_unknown_language_errors() {
 }
 
 #[test]
+fn structural_friendly_ast_pattern_renames_function() {
+    let dir = fixture(&[("lib.rs", "fn old_thing() {}\nfn keep() {}\n")]);
+    recast()
+        .arg("--lang")
+        .arg("rust")
+        .arg("--ast")
+        .arg("fn old_thing() {}")
+        .arg("--apply")
+        .arg("ignored")
+        .arg("fn new_thing() {}")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("lib.rs")).unwrap(),
+        "fn new_thing() {}\nfn keep() {}\n"
+    );
+}
+
+#[test]
+fn structural_friendly_ast_metavar_captures_name() {
+    let dir = fixture(&[("lib.rs", "fn foo() {}\nfn bar() {}\n")]);
+    recast()
+        .arg("--lang")
+        .arg("rust")
+        .arg("--ast")
+        .arg("fn $NAME() {}")
+        .arg("--apply")
+        .arg("ignored")
+        .arg("fn ${NAME}_v2() {}")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("lib.rs")).unwrap(),
+        "fn foo_v2() {}\nfn bar_v2() {}\n"
+    );
+}
+
+#[test]
 fn recover_flag_restores_orphan_backup() {
     let dir = TempDir::new().unwrap();
     let a = dir.path().join("a.txt");

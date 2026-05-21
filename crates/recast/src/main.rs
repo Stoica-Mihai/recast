@@ -144,8 +144,14 @@ pub(crate) struct Cli {
     /// Tree-sitter S-expression query (structural mode). The capture
     /// named `@root` (or, absent that, the outermost capture in each
     /// match) defines the byte range to replace.
-    #[arg(long, value_name = "QUERY", requires = "lang")]
+    #[arg(long, value_name = "QUERY", requires = "lang", conflicts_with = "ast_pattern")]
     query: Option<String>,
+
+    /// Friendly structural pattern written in the target language with
+    /// `$NAME` placeholders (compiled to a tree-sitter query). Use
+    /// either `--query` or `--ast` with `--lang`, not both.
+    #[arg(long = "ast", value_name = "PATTERN", requires = "lang", conflicts_with = "query")]
+    ast_pattern: Option<String>,
 
     /// Scan PATHS for leftover `.recast.bak.*` / `.recast.tmp.*`
     /// siblings from a previous interrupted --apply and reconcile them
@@ -244,12 +250,20 @@ fn run(cli: Cli) -> Result<u8> {
     }
 
     if let Some(lang_name) = &cli.lang {
-        let query = cli.query.as_deref().ok_or_else(|| anyhow!("--query required with --lang"))?;
         let template = cli
             .replacement
             .as_deref()
             .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
-        return run_structural(&cli, lang_name, query, template);
+        let lang = Language::from_name(lang_name)
+            .ok_or_else(|| anyhow!("unknown language `{lang_name}`"))?;
+        let query: String = if let Some(q) = cli.query.as_deref() {
+            q.to_owned()
+        } else if let Some(pat) = cli.ast_pattern.as_deref() {
+            recast_core::compile_friendly_query(lang, pat).map_err(anyhow::Error::from)?
+        } else {
+            return Err(anyhow!("--query or --ast required with --lang"));
+        };
+        return run_structural(&cli, lang_name, &query, template);
     }
 
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;

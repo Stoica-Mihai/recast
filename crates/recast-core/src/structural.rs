@@ -5,9 +5,12 @@
 //! them as `$name`. The capture named `@root` (or, if absent, the
 //! outermost match node) defines the byte range that gets replaced.
 
-use tree_sitter::{Language as TsLanguage, Parser, Query, QueryCursor, StreamingIterator};
+use tree_sitter::{Language as TsLanguage, Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::error::{Error, Result};
+
+const METAVAR_PREFIX: &str = "__RECAST_VAR_";
+const METAVAR_SUFFIX: &str = "__";
 
 /// Language registry for structural rewrites. Add a variant per
 /// supported tree-sitter grammar.
@@ -165,6 +168,170 @@ fn render_template(
         i += 1;
     }
     Ok(out)
+}
+
+/// Friendlier counterpart to [`structural_rewrite`]: `pattern_source`
+/// is written in the target language with `$NAME` placeholders. The
+/// pattern is compiled to a tree-sitter Query under the hood; the
+/// rewrite template uses the same `$NAME` / `${NAME}` substitution as
+/// the raw API.
+///
+/// Example for Rust:
+///
+/// ```text
+/// pattern:  "fn $NAME() {}"
+/// template: "fn ${NAME}_v2() {}"
+/// ```
+///
+/// Metavariables match a single AST node at the position where the
+/// `$NAME` placeholder appeared in the parsed pattern (`(_)` wildcard
+/// in the underlying query). Capture names are the placeholder name
+/// minus the leading `$`.
+pub fn structural_rewrite_friendly(
+    lang: Language,
+    source: &str,
+    pattern_source: &str,
+    template: &str,
+) -> Result<StructuralOutcome> {
+    let query = compile_friendly_query(lang, pattern_source)?;
+    structural_rewrite(lang, source, &query, template)
+}
+
+/// Compile a friendly pattern (target-language source with `$NAME`
+/// placeholders) into a tree-sitter Query string. Exposed for callers
+/// that want to inspect or further manipulate the query.
+pub fn compile_friendly_query(lang: Language, pattern: &str) -> Result<String> {
+    compile_friendly_pattern(lang, pattern)
+}
+
+fn compile_friendly_pattern(lang: Language, pattern: &str) -> Result<String> {
+    let substituted = substitute_metavars(pattern);
+    let ts_lang = lang.ts_language();
+    let mut parser = Parser::new();
+    parser.set_language(&ts_lang).map_err(|e| Error::StructuralQuery(e.to_string()))?;
+    let tree = parser
+        .parse(&substituted, None)
+        .ok_or_else(|| Error::StructuralQuery("could not parse friendly pattern".into()))?;
+    let root = tree.root_node();
+    if root.has_error() {
+        return Err(Error::StructuralQuery(format!(
+            "friendly pattern has parse errors (after metavar substitution): {}",
+            root.to_sexp()
+        )));
+    }
+    // Tree-sitter wraps top-level items in a `source_file` (or similar)
+    // container; unwrap so the user-visible pattern matches the actual
+    // item, not the whole file.
+    let effective = if root.kind() == "source_file" && root.named_child_count() >= 1 {
+        root.named_child(0).ok_or_else(|| Error::StructuralQuery("empty pattern".into()))?
+    } else {
+        root
+    };
+
+    let mut buf = String::new();
+    let mut predicates: Vec<String> = Vec::new();
+    let mut lit_counter: usize = 0;
+    emit_node(&mut buf, &mut predicates, &mut lit_counter, effective, substituted.as_bytes());
+    let trimmed = buf.trim_start();
+    if predicates.is_empty() {
+        Ok(format!("{trimmed} @root"))
+    } else {
+        Ok(format!("({trimmed} @root {})", predicates.join(" ")))
+    }
+}
+
+fn substitute_metavars(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let bytes = pattern.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'$'
+            && i + 1 < bytes.len()
+            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
+        {
+            let mut j = i + 1;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                j += 1;
+            }
+            let name = &pattern[i + 1..j];
+            out.push_str(METAVAR_PREFIX);
+            out.push_str(name);
+            out.push_str(METAVAR_SUFFIX);
+            i = j;
+            continue;
+        }
+        out.push(b as char);
+        i += 1;
+    }
+    out
+}
+
+fn emit_node(
+    buf: &mut String,
+    predicates: &mut Vec<String>,
+    lit_counter: &mut usize,
+    node: Node<'_>,
+    src: &[u8],
+) {
+    if !node.is_named() {
+        return;
+    }
+    if let Some(meta) = metavar_at(node, src) {
+        buf.push_str(" (_) @");
+        buf.push_str(&meta);
+        return;
+    }
+    // Terminal named leaves (identifier, integer_literal, etc.) are
+    // constrained to exact text via #eq? predicates so a literal in the
+    // pattern doesn't match every same-kind sibling in the source.
+    if node.named_child_count() == 0 {
+        if let Ok(text) = node.utf8_text(src) {
+            let cap = format!("__lit{lit_counter}");
+            *lit_counter += 1;
+            buf.push_str(&format!(" ({}) @{}", node.kind(), cap));
+            predicates.push(format!("(#eq? @{cap} \"{}\")", escape_query_string(text)));
+            return;
+        }
+    }
+    buf.push_str(" (");
+    buf.push_str(node.kind());
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        let field = node.field_name_for_child(child.id() as u32);
+        if let Some(name) = field {
+            buf.push(' ');
+            buf.push_str(name);
+            buf.push(':');
+        }
+        emit_node(buf, predicates, lit_counter, child, src);
+    }
+    buf.push(')');
+}
+
+fn escape_query_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn metavar_at(node: Node<'_>, src: &[u8]) -> Option<String> {
+    if node.named_child_count() != 0 {
+        return None;
+    }
+    let text = node.utf8_text(src).ok()?;
+    let stripped = text.strip_prefix(METAVAR_PREFIX)?.strip_suffix(METAVAR_SUFFIX)?;
+    if stripped.is_empty() {
+        return None;
+    }
+    Some(stripped.to_owned())
 }
 
 #[cfg(test)]

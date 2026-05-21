@@ -76,3 +76,45 @@ fn language_from_name_parses_rust() {
     assert!(matches!(Language::from_name("Rust"), Some(Language::Rust)));
     assert!(Language::from_name("zzz").is_none());
 }
+
+#[test]
+fn friendly_pattern_renames_function() {
+    let source = "fn old_one() {}\nfn other() { old_one(); }";
+    let out =
+        structural_rewrite_friendly(Language::Rust, source, "fn old_one() {}", "fn new_one() {}")
+            .unwrap();
+    assert_eq!(out.text, "fn new_one() {}\nfn other() { old_one(); }");
+    assert_eq!(out.matches, 1);
+}
+
+#[test]
+fn friendly_pattern_captures_metavar() {
+    let source = "fn foo() {}\nfn bar() {}";
+    let out =
+        structural_rewrite_friendly(Language::Rust, source, "fn $NAME() {}", "fn ${NAME}_v2() {}")
+            .unwrap();
+    assert_eq!(out.text, "fn foo_v2() {}\nfn bar_v2() {}");
+    assert_eq!(out.matches, 2);
+}
+
+#[test]
+fn friendly_pattern_unparseable_returns_query_error() {
+    let err =
+        structural_rewrite_friendly(Language::Rust, "fn foo() {}", "fn $$$ broken", "irrelevant")
+            .unwrap_err();
+    assert!(matches!(err, Error::StructuralQuery(_)));
+}
+
+#[test]
+fn friendly_pattern_no_matches_leaves_source_intact() {
+    let source = "fn foo() {}";
+    let out = structural_rewrite_friendly(
+        Language::Rust,
+        source,
+        "struct $NAME {}",
+        "struct ${NAME}V2 {}",
+    )
+    .unwrap();
+    assert_eq!(out.text, source);
+    assert_eq!(out.matches, 0);
+}

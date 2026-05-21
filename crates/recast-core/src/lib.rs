@@ -32,5 +32,8 @@ pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
 #[cfg(feature = "script")]
 pub use script::ScriptRewriter;
 #[cfg(feature = "structural")]
-pub use structural::{Language, StructuralOutcome, structural_rewrite};
+pub use structural::{
+    Language, StructuralOutcome, compile_friendly_query, structural_rewrite,
+    structural_rewrite_friendly,
+};
 pub use walker::{WalkOptions, walk_paths};
