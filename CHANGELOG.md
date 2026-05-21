@@ -5,11 +5,17 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
-## [0.1.5] — 2026-05-21
+## [0.1.6] — 2026-05-21
+
+First successful crates.io release. v0.1.5's publish step failed
+because the crates.io account hadn't verified its email yet; this
+is the same content with the verified email now in place.
+
+## [0.1.5] — 2026-05-21 (crates.io publish blocked on email verification)
 
 Hotfix: v0.1.4's release matrix referenced the old `recast` package
 name (renamed to `recast-cli` for the crates.io publish), so every
-target legg failed to build and nothing shipped. The Cargo.toml
+target leg failed to build and nothing shipped. The Cargo.toml
 fix is the only code-level change; everything below is what 0.1.4
 *was* meant to ship.
 
