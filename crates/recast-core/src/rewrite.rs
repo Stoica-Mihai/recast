@@ -98,7 +98,15 @@ pub fn label_for_path(path: &Path) -> String {
     if buf.as_os_str().is_empty() {
         ".".to_owned()
     } else {
-        buf.to_string_lossy().replace('\\', "/")
+        let lossy = buf.to_string_lossy();
+        // Backslash → forward slash only matters on Windows. Skip the
+        // scan + clone on Unix where paths never contain `\` as a
+        // separator.
+        if cfg!(windows) || lossy.contains('\\') {
+            lossy.replace('\\', "/")
+        } else {
+            lossy.into_owned()
+        }
     }
 }
 

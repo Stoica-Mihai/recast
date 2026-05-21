@@ -185,7 +185,11 @@ impl CompiledStructural {
         }
         hits.sort_by_key(|h| h.0);
 
-        let mut out = String::with_capacity(source.len());
+        // Reserve source.len() plus the per-hit (replacement - range) delta
+        // so the splice loop doesn't realloc when replacements grow the text.
+        let extra: usize =
+            hits.iter().map(|(start, end, r)| r.len().saturating_sub(end - start)).sum();
+        let mut out = String::with_capacity(source.len() + extra);
         let mut cursor_byte = 0usize;
         let mut applied = 0usize;
         for (start, end, replacement) in &hits {
@@ -522,10 +526,13 @@ fn emit_node(
     if node.named_child_count() == 0
         && let Ok(text) = node.utf8_text(src)
     {
-        let cap = format!("__lit{lit_counter}");
+        use std::fmt::Write as _;
+        let n = *lit_counter;
         *lit_counter += 1;
-        buf.push_str(&format!(" ({}) @{}", node.kind(), cap));
-        predicates.push(format!("(#eq? @{cap} \"{}\")", escape_query_string(text)));
+        let _ = write!(buf, " ({}) @__lit{n}", node.kind());
+        let mut pred = String::new();
+        let _ = write!(pred, "(#eq? @__lit{n} \"{}\")", escape_query_string(text));
+        predicates.push(pred);
         return;
     }
     buf.push_str(" (");
