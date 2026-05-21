@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 use crate::error::{Error, Result};
 use crate::pattern::{CompiledPattern, PatternOptions};
-use crate::rewrite::{rewrite_text, unified_diff};
+use crate::rewrite::{label_for_path, rewrite_text, unified_diff};
 use crate::walker::{WalkOptions, walk_paths};
 
 #[derive(Debug, Clone)]
@@ -142,7 +142,7 @@ fn process_one(
         }
     }
 
-    let label = path.to_string_lossy().into_owned();
+    let label = label_for_path(path);
     let diff = unified_diff(&label, &outcome.before, &outcome.after);
     Ok(Some(FileChange {
         path: path.to_path_buf(),

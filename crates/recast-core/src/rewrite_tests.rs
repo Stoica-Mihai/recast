@@ -1,9 +1,36 @@
 #![allow(clippy::unwrap_used)]
 
+use std::path::Path;
+
 use insta::assert_snapshot;
 
 use super::*;
 use crate::pattern::{CompiledPattern, PatternOptions};
+
+#[test]
+fn label_strips_leading_curdir() {
+    assert_eq!(label_for_path(Path::new("./src/a.rs")), "src/a.rs");
+}
+
+#[test]
+fn label_keeps_absolute_paths() {
+    assert_eq!(label_for_path(Path::new("/tmp/x.rs")), "/tmp/x.rs");
+}
+
+#[test]
+fn label_keeps_plain_relative_paths() {
+    assert_eq!(label_for_path(Path::new("src/a.rs")), "src/a.rs");
+}
+
+#[test]
+fn label_strips_only_one_leading_curdir() {
+    assert_eq!(label_for_path(Path::new("./././x.rs")), "x.rs");
+}
+
+#[test]
+fn label_for_curdir_alone_is_dot() {
+    assert_eq!(label_for_path(Path::new(".")), ".");
+}
 
 #[test]
 fn rewrite_counts_matches_and_replaces() {

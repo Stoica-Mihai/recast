@@ -20,5 +20,5 @@ pub use error::{Error, Result};
 pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};
 pub use plan::{FileChange, Plan, PlanOptions, PlanOutcome, plan_rewrite};
-pub use rewrite::{RewriteOutcome, rewrite_text, unified_diff};
+pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
 pub use walker::{WalkOptions, walk_paths};
