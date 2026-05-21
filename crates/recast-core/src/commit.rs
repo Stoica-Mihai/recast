@@ -299,7 +299,16 @@ pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
             None => continue,
         };
         if let Some((target_name, kind, nonce)) = parse_sibling_name(&name) {
-            let target = path.parent().map(|p| p.join(&target_name)).unwrap_or_else(PathBuf::new);
+            // A recast sibling file lives next to its target, so its
+            // path must have a parent. If the walker handed back a
+            // parentless path (root-level entry, weird filesystem),
+            // bucketing under PathBuf::new() would silently merge
+            // unrelated targets — skip instead.
+            let Some(parent) = path.parent() else {
+                trace!(name = %name, "recover: sibling has no parent; skipping");
+                continue;
+            };
+            let target = parent.join(&target_name);
             let g = groups.entry(target).or_default();
             match kind {
                 SiblingKind::Backup => g.backups.push((nonce, path.clone())),
