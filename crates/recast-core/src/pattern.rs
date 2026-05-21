@@ -95,9 +95,6 @@ impl CompiledPattern {
                     continue;
                 }
             }
-            // Walk by UTF-8 codepoint, not raw byte: `b as char` would
-            // mojibake multibyte characters in the replacement template
-            // (e.g. accented letters, CJK).
             let ch_len = crate::template_scan::utf8_char_len(b);
             out.push_str(&self.replacement[i..i + ch_len]);
             i += ch_len;

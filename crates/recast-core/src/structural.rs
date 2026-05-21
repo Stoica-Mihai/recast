@@ -295,8 +295,6 @@ fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<Template
                 continue;
             }
         }
-        // Advance a whole UTF-8 codepoint, not a single byte: `b as char`
-        // would mojibake every multibyte glyph in the template.
         let ch_len = utf8_char_len(b);
         literal.push_str(&template[i..i + ch_len]);
         i += ch_len;
@@ -524,9 +522,6 @@ fn substitute_metavars(pattern: &str) -> String {
                 continue;
             }
         }
-        // Advance the leading byte of one UTF-8 codepoint, not one byte:
-        // `b as char` would corrupt every non-ASCII character in the
-        // user's `--ast` pattern.
         let ch_len = utf8_char_len(b);
         out.push_str(&pattern[i..i + ch_len]);
         i += ch_len;
@@ -543,9 +538,8 @@ fn emit_node(
 ) {
     use std::fmt::Write as _;
 
-    // Iterative traversal: an unbounded `--ast` pattern would otherwise
-    // recurse to whatever depth the user supplies (parser nests inside
-    // nested expressions), giving them a stack-overflow vector.
+    // Iterative: user `--ast` pattern depth is unbounded — recursion
+    // would give it a stack-overflow vector.
     enum Frame<'tree> {
         Open { node: Node<'tree>, field: Option<&'static str> },
         Close,

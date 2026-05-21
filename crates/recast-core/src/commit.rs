@@ -71,10 +71,9 @@ fn finalize_apply(
     match result {
         Ok(committed) => {
             debug!(files = committed.len(), "apply: commit phase complete");
-            // Fsync parents BEFORE unlinking backups: the rename batch's
-            // directory entries must be durable before the safety net is
-            // dropped, otherwise a crash in the window can leave the target
-            // absent with the backup already gone.
+            // Backups must outlive the parent-dir fsync; reversing this
+            // order opens a crash window where the rename isn't durable
+            // and the safety net is already gone.
             best_effort_fsync_parents(&committed);
             best_effort_cleanup_backups(&committed);
             Ok(ApplyOutcome {
@@ -225,9 +224,6 @@ fn commit_one(staged: &Staged, nonces: &NonceGen) -> Result<Committed> {
 }
 
 fn rollback_committed(committed: &[Committed]) {
-    // Unix `rename` replaces the destination atomically, so a separate
-    // `remove_file(&c.target)` would only open a window where neither old
-    // nor new content exists. Trust the rename to do the swap in one step.
     for c in committed.iter().rev() {
         let _ = fs::rename(&c.backup_path, &c.target);
     }
@@ -318,11 +314,9 @@ pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
     }
 
     let mut summary = RecoverySummary::default();
-    // Aggregate errors so one bad group doesn't abort the sweep: the user
-    // calls --recover precisely because the tree is in a partial state, and
-    // bailing on the first failure leaves the rest unreconciled. The first
-    // error is propagated after every group has been attempted so callers
-    // still see a typed failure.
+    // Best-effort: keep sweeping past per-group failures (the tree is
+    // already partial — that's why --recover was called) and surface the
+    // first error at the end so the exit code still reflects failure.
     let mut first_error: Option<Error> = None;
     for (target, mut group) in groups {
         group.backups.sort_by_key(|(n, _)| *n);

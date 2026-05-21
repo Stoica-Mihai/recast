@@ -306,10 +306,6 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    // Build the user-scoped pool once and wrap every parallel phase
-    // (plan + apply, regex / scripted / structural alike) so `--threads N`
-    // is honored uniformly. The previous shape only wrapped the regex
-    // planner, leaving scripted/structural/apply on rayon's global pool.
     let pool = build_pool(cli.threads).context("configure worker thread pool")?;
 
     if let Some(lang_name) = &cli.structural.lang {
