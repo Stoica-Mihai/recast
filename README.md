@@ -1,5 +1,11 @@
 # recast
 
+[![crates.io](https://img.shields.io/crates/v/recast-cli.svg?label=recast-cli)](https://crates.io/crates/recast-cli)
+[![recast-core](https://img.shields.io/crates/v/recast-core.svg?label=recast-core)](https://crates.io/crates/recast-core)
+[![docs.rs](https://img.shields.io/docsrs/recast-core)](https://docs.rs/recast-core)
+[![CI](https://github.com/Stoica-Mihai/recast/actions/workflows/ci.yml/badge.svg)](https://github.com/Stoica-Mihai/recast/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/recast-cli.svg)](./LICENSE)
+
 CLI for safe, atomic, transparent multi-file text rewrites. Pure Rust.
 Tuned for LLM coding agents driving mechanical edits; equally usable by
 humans for mechanical refactors.
@@ -19,9 +25,11 @@ humans for mechanical refactors.
    (`--script`), or tree-sitter structural (`--lang` + `--query` /
    `--ast`).
 
-Status: alpha (v0.1.3). All phases of [`PLAN.md`](./PLAN.md) landed.
+Status: alpha (v0.1.6). All phases of [`PLAN.md`](./PLAN.md) landed.
 
-- 📦 Pre-built binaries: [GitHub Releases](https://github.com/Stoica-Mihai/recast/releases)
+- 📦 Install: `cargo install recast-cli` ([crates.io/recast-cli](https://crates.io/crates/recast-cli))
+- 📚 Library: [crates.io/recast-core](https://crates.io/crates/recast-core) · [docs.rs/recast-core](https://docs.rs/recast-core)
+- 📥 Pre-built binaries: [GitHub Releases](https://github.com/Stoica-Mihai/recast/releases)
 - 📖 Hosted docs: <https://stoica-mihai.github.io/recast/>
 - 🛠 Operating manual: [`AGENTS.md`](./AGENTS.md)
 
