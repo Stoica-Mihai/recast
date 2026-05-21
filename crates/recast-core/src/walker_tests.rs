@@ -80,6 +80,34 @@ fn walker_glob_include_only_rust_files() {
     assert!(!files.iter().any(|p| p.ends_with("b.md")));
 }
 
+#[cfg(unix)]
+#[test]
+fn walker_skips_symlinks_by_default() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("real.txt"), b"x").unwrap();
+    symlink(root.join("real.txt"), root.join("link.txt")).unwrap();
+    let files = walk_paths(&[root], &WalkOptions::default()).unwrap();
+    assert!(files.iter().any(|p| p.ends_with("real.txt")));
+    assert!(!files.iter().any(|p| p.ends_with("link.txt")));
+}
+
+#[cfg(unix)]
+#[test]
+fn walker_follow_symlinks_includes_targets() {
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("real.txt"), b"x").unwrap();
+    symlink(root.join("real.txt"), root.join("link.txt")).unwrap();
+    let opts = WalkOptions { follow_symlinks: true, ..Default::default() };
+    let files = walk_paths(&[root], &opts).unwrap();
+    assert!(files.iter().any(|p| p.ends_with("link.txt")));
+}
+
 #[test]
 fn walker_glob_negate_excludes_vendor() {
     let dir = TempDir::new().unwrap();
