@@ -1,0 +1,135 @@
+use regex::{Regex, RegexBuilder};
+
+use crate::error::Result;
+
+#[derive(Debug, Clone, Default)]
+pub struct PatternOptions {
+    pub literal: bool,
+    pub ignore_case: bool,
+    pub single_line: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledPattern {
+    regex: Regex,
+    replacement: String,
+    literal: bool,
+}
+
+impl CompiledPattern {
+    pub fn compile(pattern: &str, replacement: &str, opts: &PatternOptions) -> Result<Self> {
+        let source = if opts.literal { regex::escape(pattern) } else { pattern.to_owned() };
+        let regex = RegexBuilder::new(&source)
+            .case_insensitive(opts.ignore_case)
+            .dot_matches_new_line(!opts.single_line)
+            .multi_line(true)
+            .build()?;
+        Ok(Self { regex, replacement: replacement.to_owned(), literal: opts.literal })
+    }
+
+    pub fn regex(&self) -> &Regex {
+        &self.regex
+    }
+
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+
+    /// True when the pattern is convergent given its replacement: re-applying
+    /// the rewrite to its own output produces no further match. Catches
+    /// non-idempotent rewrites such as `a` → `aa`.
+    pub fn is_convergent(&self) -> bool {
+        let replacement_probe = self.replacement_probe();
+        !self.regex.is_match(&replacement_probe)
+    }
+
+    fn replacement_probe(&self) -> String {
+        if self.literal {
+            return self.replacement.clone();
+        }
+        let mut out = String::with_capacity(self.replacement.len());
+        let bytes = self.replacement.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b == b'$' && i + 1 < bytes.len() {
+                let next = bytes[i + 1];
+                if next == b'$' {
+                    out.push('$');
+                    i += 2;
+                    continue;
+                }
+                if next.is_ascii_digit() {
+                    i += 2;
+                    while i < bytes.len() && bytes[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    continue;
+                }
+                if next == b'{' {
+                    if let Some(end) = self.replacement[i + 2..].find('}') {
+                        i += 2 + end + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(b as char);
+            i += 1;
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn literal_mode_escapes_metacharacters() {
+        let p = CompiledPattern::compile(
+            "a.b",
+            "X",
+            &PatternOptions { literal: true, ..Default::default() },
+        )
+        .unwrap();
+        assert!(p.regex().is_match("a.b"));
+        assert!(!p.regex().is_match("aXb"));
+    }
+
+    #[test]
+    fn convergent_rewrite_is_detected() {
+        let p = CompiledPattern::compile("Old", "New", &PatternOptions::default()).unwrap();
+        assert!(p.is_convergent());
+    }
+
+    #[test]
+    fn non_convergent_rewrite_is_detected() {
+        let p = CompiledPattern::compile("a", "aa", &PatternOptions::default()).unwrap();
+        assert!(!p.is_convergent());
+    }
+
+    #[test]
+    fn capture_group_in_replacement_does_not_break_convergence_probe() {
+        let p = CompiledPattern::compile(r"foo(\d+)", "bar$1", &PatternOptions::default()).unwrap();
+        assert!(p.is_convergent());
+    }
+
+    #[test]
+    fn dot_matches_newline_by_default() {
+        let p = CompiledPattern::compile("a.b", "X", &PatternOptions::default()).unwrap();
+        assert!(p.regex().is_match("a\nb"));
+    }
+
+    #[test]
+    fn single_line_flag_disables_dotall() {
+        let p = CompiledPattern::compile(
+            "a.b",
+            "X",
+            &PatternOptions { single_line: true, ..Default::default() },
+        )
+        .unwrap();
+        assert!(!p.regex().is_match("a\nb"));
+    }
+}

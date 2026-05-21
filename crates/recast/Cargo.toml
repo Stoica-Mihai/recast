@@ -1,0 +1,28 @@
+[package]
+name = "recast"
+description = "recast CLI: safe, atomic, transparent multi-file text rewrites."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "recast"
+path = "src/main.rs"
+
+[dependencies]
+recast-core = { workspace = true, features = ["serde"] }
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
