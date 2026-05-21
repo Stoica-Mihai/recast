@@ -58,7 +58,11 @@ jobs:
             fuzz-corpus-${{ matrix.target }}-
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        # No --locked: cargo-fuzz 0.13.1 pins an ancient rustix that
+        # fails to build on current nightly (uses tightened-since
+        # `rustc_attrs` gates). Letting the resolver pick fresh deps
+        # avoids the version-lock trap.
+        run: cargo install cargo-fuzz
 
       - name: Run fuzz target
         working-directory: fuzz
