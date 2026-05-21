@@ -195,12 +195,44 @@ impl Cli {
                 types_not: self.type_not.clone(),
                 globs: self.glob.clone(),
             },
-            at_least: Some(self.at_least.unwrap_or(1)),
+            at_least: self.min_matches(),
             at_most: self.at_most,
             allow_non_convergent: self.allow_non_convergent,
             max_bytes: self.max_bytes,
             max_files: self.max_files,
         }
+    }
+
+    /// `--at-least` value with the implicit default of 1 applied so the
+    /// guard always fires unless the user explicitly passes `0`.
+    fn min_matches(&self) -> Option<usize> {
+        Some(self.at_least.unwrap_or(1))
+    }
+
+    fn paths_as_pathbufs(&self) -> Vec<PathBuf> {
+        self.paths.iter().map(PathBuf::from).collect()
+    }
+
+    /// `--recover` accepts any number of paths as positionals. Clap binds
+    /// them to the `pattern` and `replacement` slots first (both
+    /// `Option`), so fold those back into the path list and drop the
+    /// trailing `"."` default-value sentinel if it was tacked on after
+    /// real positionals.
+    fn recover_paths(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        if let Some(p) = self.pattern.as_deref() {
+            paths.push(PathBuf::from(p));
+        }
+        if let Some(p) = self.replacement.as_deref() {
+            paths.push(PathBuf::from(p));
+        }
+        for p in &self.paths {
+            paths.push(PathBuf::from(p));
+        }
+        if paths.len() > 1 && paths.last().map(|p| p.as_os_str() == ".").unwrap_or(false) {
+            paths.pop();
+        }
+        paths
     }
 }
 
@@ -235,43 +267,13 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    let writes_tree = cli.apply || cli.recover;
-    let _lock_guard: Option<WorkspaceLock> = if writes_tree && !cli.force && !cli.stdin {
-        let first =
-            cli.paths.first().or(cli.pattern.as_ref()).cloned().unwrap_or_else(|| ".".to_owned());
-        let root = PathBuf::from(first);
-        let lock_dir = if root.is_file() {
-            root.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
-        } else {
-            root
-        };
-        let lock_path = lock_dir.join(".recast.lock");
-        match acquire_workspace_lock(&lock_path) {
-            Ok(g) => Some(g),
-            Err(err) => return Ok(handle_plan_error(err, cli.json)),
-        }
-    } else {
-        None
+    let _lock_guard = match acquire_workspace_lock_for(&cli) {
+        Ok(g) => g,
+        Err(err) => return handle_plan_error(err, cli.json),
     };
 
     if cli.recover {
-        // In --recover mode the user may pass any number of paths as
-        // positional arguments. Clap binds them to the `pattern` and
-        // `replacement` slots first (they're declared `Option`), so we
-        // fold them back into the path list before sweeping.
-        let mut paths: Vec<PathBuf> = Vec::new();
-        if let Some(p) = cli.pattern.as_deref() {
-            paths.push(PathBuf::from(p));
-        }
-        if let Some(p) = cli.replacement.as_deref() {
-            paths.push(PathBuf::from(p));
-        }
-        for p in &cli.paths {
-            paths.push(PathBuf::from(p));
-        }
-        if paths.len() > 1 && paths.last().map(|p| p.as_os_str() == ".").unwrap_or(false) {
-            paths.pop();
-        }
+        let paths = cli.recover_paths();
         let summary = recover_sweep(&paths).context("recover sweep")?;
         eprintln!(
             "recast: recovered {} backup(s), removed {} stale backup(s), removed {} temp(s)",
@@ -308,7 +310,7 @@ fn run(cli: Cli) -> Result<u8> {
         return run_stdin(&cli, pattern, replacement, script.as_ref());
     }
 
-    let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
+    let paths = cli.paths_as_pathbufs();
     let opts = cli.plan_options();
 
     let result = match &script {
@@ -320,7 +322,7 @@ fn run(cli: Cli) -> Result<u8> {
     };
     let plan = match result {
         Ok(plan) => plan,
-        Err(err) => return Ok(handle_plan_error(err, cli.json)),
+        Err(err) => return handle_plan_error(err, cli.json),
     };
 
     dispatch_plan(&cli, &plan)
@@ -361,22 +363,20 @@ fn run_structural(cli: &Cli, lang: Language, query: &str, template: &str) -> Res
         io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
         let outcome = match structural_rewrite(lang, &buf, query, template) {
             Ok(o) => o,
-            Err(e) => return Ok(handle_plan_error(e, cli.json)),
+            Err(e) => return handle_plan_error(e, cli.json),
         };
-        if let Err(e) =
-            check_match_counts(outcome.matches, Some(cli.at_least.unwrap_or(1)), cli.at_most)
-        {
-            return Ok(handle_plan_error(e, cli.json));
+        if let Err(e) = check_match_counts(outcome.matches, cli.min_matches(), cli.at_most) {
+            return handle_plan_error(e, cli.json);
         }
         io::stdout().lock().write_all(outcome.text.as_bytes()).context("write stdout")?;
         return Ok(EXIT_OK);
     }
 
-    let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
+    let paths = cli.paths_as_pathbufs();
     let opts = cli.plan_options();
     let plan = match plan_structural_rewrite(lang, query, template, &paths, &opts) {
         Ok(p) => p,
-        Err(e) => return Ok(handle_plan_error(e, cli.json)),
+        Err(e) => return handle_plan_error(e, cli.json),
     };
 
     dispatch_plan(cli, &plan)
@@ -398,10 +398,8 @@ fn run_stdin(
         None => rewrite_text(&compiled, &buf),
     };
 
-    if let Err(e) =
-        check_match_counts(outcome.matches, Some(cli.at_least.unwrap_or(1)), cli.at_most)
-    {
-        return Ok(handle_plan_error(e, cli.json));
+    if let Err(e) = check_match_counts(outcome.matches, cli.min_matches(), cli.at_most) {
+        return handle_plan_error(e, cli.json);
     }
 
     io::stdout().lock().write_all(outcome.after.as_bytes()).context("write stdout")?;
@@ -462,17 +460,33 @@ fn emit_apply(cli: &Cli, plan: &Plan) -> Result<()> {
     Ok(())
 }
 
-fn handle_plan_error(err: CoreError, as_json: bool) -> u8 {
+fn handle_plan_error(err: CoreError, as_json: bool) -> Result<u8> {
     let code = match &err {
         CoreError::TooFewMatches { .. } | CoreError::TooManyMatches { .. } => EXIT_GUARD_VIOLATED,
         _ => EXIT_INTERNAL,
     };
     if as_json {
-        if let Ok(line) = json::from_error(&err, code).to_line() {
-            println!("{line}");
-        }
+        let line = json::from_error(&err, code).to_line().context("serialize json error")?;
+        println!("{line}");
     } else {
         eprintln!("recast: {err}");
     }
-    code
+    Ok(code)
+}
+
+fn acquire_workspace_lock_for(cli: &Cli) -> std::result::Result<Option<WorkspaceLock>, CoreError> {
+    let writes_tree = cli.apply || cli.recover;
+    if !writes_tree || cli.force || cli.stdin {
+        return Ok(None);
+    }
+    let first =
+        cli.paths.first().or(cli.pattern.as_ref()).cloned().unwrap_or_else(|| ".".to_owned());
+    let root = PathBuf::from(first);
+    let lock_dir = if root.is_file() {
+        root.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        root
+    };
+    let lock_path = lock_dir.join(".recast.lock");
+    acquire_workspace_lock(&lock_path).map(Some)
 }
