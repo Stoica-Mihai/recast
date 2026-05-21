@@ -42,6 +42,18 @@ pub enum Error {
 
     #[error("script runtime error: {0}")]
     ScriptRuntime(String),
+
+    #[error("structural: unknown language `{0}`")]
+    UnknownLanguage(String),
+
+    #[error("structural: query error: {0}")]
+    StructuralQuery(String),
+
+    #[error("structural: template error: {0}")]
+    StructuralTemplate(String),
+
+    #[error("structural: parse error")]
+    StructuralParse,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

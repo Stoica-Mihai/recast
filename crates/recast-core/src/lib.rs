@@ -15,6 +15,8 @@ mod plan;
 mod rewrite;
 #[cfg(feature = "script")]
 mod script;
+#[cfg(feature = "structural")]
+mod structural;
 mod walker;
 
 pub use commit::{ApplyOutcome, apply_changes};
@@ -29,4 +31,6 @@ pub use rewrite::rewrite_text_scripted;
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
 #[cfg(feature = "script")]
 pub use script::ScriptRewriter;
+#[cfg(feature = "structural")]
+pub use structural::{Language, StructuralOutcome, structural_rewrite};
 pub use walker::{WalkOptions, walk_paths};

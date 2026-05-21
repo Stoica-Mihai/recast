@@ -18,6 +18,8 @@ rustix.workspace = true
 rayon.workspace = true
 rhai = { workspace = true, optional = true }
 thiserror.workspace = true
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-rust = { workspace = true, optional = true }
 tracing.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -26,6 +28,7 @@ serde_json = { workspace = true, optional = true }
 default = []
 serde = ["dep:serde", "dep:serde_json"]
 script = ["dep:rhai"]
+structural = ["dep:tree-sitter", "dep:tree-sitter-rust"]
 
 [dev-dependencies]
 tempfile.workspace = true

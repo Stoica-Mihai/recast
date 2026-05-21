@@ -68,6 +68,10 @@ pub enum ErrorKind {
     TooManyMatches,
     ScriptParse,
     ScriptRuntime,
+    UnknownLanguage,
+    StructuralQuery,
+    StructuralTemplate,
+    StructuralParse,
 }
 
 impl JsonReport<'_> {
@@ -125,6 +129,10 @@ pub fn error_kind(err: &Error) -> ErrorKind {
         Error::TooManyMatches { .. } => ErrorKind::TooManyMatches,
         Error::ScriptParse(_) => ErrorKind::ScriptParse,
         Error::ScriptRuntime(_) => ErrorKind::ScriptRuntime,
+        Error::UnknownLanguage(_) => ErrorKind::UnknownLanguage,
+        Error::StructuralQuery(_) => ErrorKind::StructuralQuery,
+        Error::StructuralTemplate(_) => ErrorKind::StructuralTemplate,
+        Error::StructuralParse => ErrorKind::StructuralParse,
     }
 }
 
