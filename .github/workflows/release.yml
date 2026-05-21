@@ -52,9 +52,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross build --release --all-features --target ${{ matrix.target }} -p recast
+            cross build --release --all-features --target ${{ matrix.target }} -p recast-cli
           else
-            cargo build --release --all-features --target ${{ matrix.target }} -p recast
+            cargo build --release --all-features --target ${{ matrix.target }} -p recast-cli
           fi
       - name: package (unix)
         if: matrix.os != 'windows-latest'
