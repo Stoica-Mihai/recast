@@ -42,6 +42,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   reserved keyword). Sandbox caps: 1M operations, 1 MiB strings,
   1024 array entries, expression depth 64. Available in `--stdin`
   too. Scripted scans run sequentially (rhai engine isn't `Sync`).
+- **Phase 6 structural rewrites** — feature-gated `structural`
+  flag pulls in `tree-sitter` + `tree-sitter-rust`. `recast
+  --lang rust --query '<s-expr>' '' '<template>' paths/` parses
+  each file with the named grammar, runs the tree-sitter Query
+  against it, and substitutes the captures into the template.
+  `$name` / `${name}` references the capture; `@root` (or the
+  outermost capture when absent) defines the replace range.
+  Supports `--stdin`, `--check`, `--apply`, default diff. Only
+  Rust shipped initially; the `Language` enum is the extension
+  point for more grammars.
 - Tracing spans via `tracing` at `DEBUG` (phase markers) and `TRACE`
   (per-file events). `RUST_LOG=debug` surfaces them.
 - Public-API rustdoc on every exported item; a `docs` CI job runs

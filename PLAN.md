@@ -1,11 +1,12 @@
 # recast
 
-**Status:** Alpha. Phases 0–4 landed; CLI is usable end-to-end with
-atomic apply, idempotency check, match-count guard, type/glob filters,
-shell completions, and a schema-locked JSON output. Phases 5–6 (script
-DSL, structural matching) are still pre-implementation. Treat this
-document as the project charter and update it in lockstep with the
-implementation.
+**Status:** Alpha. All six phases of the original charter have landed.
+Phases 0–4 cover the core safe-rewrite engine (regex, diff, atomic
+apply, guards, ignore/glob filters, JSON schema). Phase 5 adds Rhai
+scripted replacements behind the `script` feature. Phase 6 adds
+tree-sitter structural matching behind the `structural` feature (Rust
+only for v0). Treat this document as the project charter and update it
+in lockstep with the implementation.
 
 ## 1. What `recast` is
 
@@ -337,11 +338,19 @@ count, `--completions <shell>` for bash/zsh/fish/elvish/powershell,
 unified-diff path-label cleanup (strips leading `./`), binary-file skip
 regression test, README rewrite, AGENTS.md TDD + DRY rules.
 
-**Phase 5 — script mode (v2).** Embed `rhai` or a small `expr` DSL for
-conditional replacements.
+**Phase 5 — script mode (v2). [landed]** Embed `rhai` behind the
+`script` feature. `--script foo.rhai` invokes a Rhai callback per regex
+match; the return value becomes the replacement. Sandbox caps on
+operations, string size, array length, expression depth. Sequential
+scan (rhai engine isn't `Sync`).
 
-**Phase 6 — structural mode (v2).** Tree-sitter for syntactic patterns
-behind `--lang`. Optional dependency, feature-flagged.
+**Phase 6 — structural mode (v2). [landed, Rust only]** Tree-sitter
+integration behind the `structural` feature. `--lang rust --query
+'<s-expr>' '' '<template>' paths/` parses each file with the named
+grammar, runs the tree-sitter Query, substitutes captures into the
+template (`$name` / `${name}`; `@root` marks the replace range). Only
+Rust ships initially; the `Language` enum is the extension point for
+adding more grammars.
 
 Each phase ships as one or more commits with the **commit-per-feature**
 cadence: every commit must pass `cargo fmt --check`, `cargo clippy -D
