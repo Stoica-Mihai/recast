@@ -306,49 +306,68 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
+    // Resolve structural --query / --ast before constructing the worker
+    // pool: a malformed structural CLI should fail without spawning N
+    // rayon threads first.
+    let structural = resolve_structural(&cli)?;
 
-    if let Some(lang_name) = &cli.structural.lang {
-        let template = cli
-            .replacement
-            .as_deref()
-            .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
-        let lang = resolve_lang(lang_name)?;
-        let query: String = if let Some(q) = cli.structural.query.as_deref() {
-            q.to_owned()
-        } else if let Some(pat) = cli.structural.ast_pattern.as_deref() {
-            recast_core::compile_friendly_query(lang, pat).map_err(anyhow::Error::from)?
-        } else {
-            return Err(anyhow!("--query or --ast required with --lang"));
-        };
-        return pool.install(|| run_structural(&cli, lang, &query, template));
-    }
-
-    let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
-    let replacement = cli.replacement.as_deref().ok_or_else(|| anyhow!("replacement required"))?;
+    let pattern = cli.pattern.as_deref();
+    let replacement = cli.replacement.as_deref();
 
     let script = match &cli.script {
         Some(path) => Some(ScriptRewriter::from_file(path).map_err(anyhow::Error::from)?),
         None => None,
     };
 
-    if cli.stdin {
+    // Stdin path is single-buffer; no worker pool needed.
+    if cli.stdin && structural.is_none() {
+        let pattern = pattern.ok_or_else(|| anyhow!("pattern required"))?;
+        let replacement = replacement.ok_or_else(|| anyhow!("replacement required"))?;
         return run_stdin(&cli, pattern, replacement, script.as_ref());
     }
 
-    let paths = cli.paths_as_pathbufs();
-    let opts = cli.plan_options();
+    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
+    pool.install(|| {
+        if let Some((lang, query, template)) = structural.as_ref() {
+            return run_structural(&cli, *lang, query, template);
+        }
+        let pattern = pattern.ok_or_else(|| anyhow!("pattern required"))?;
+        let replacement = replacement.ok_or_else(|| anyhow!("replacement required"))?;
+        let paths = cli.paths_as_pathbufs();
+        let opts = cli.plan_options();
+        let result = match &script {
+            Some(s) => plan_rewrite_scripted(pattern, s, &paths, &opts),
+            None => plan_rewrite(pattern, replacement, &paths, &opts),
+        };
+        let plan = match result {
+            Ok(plan) => plan,
+            Err(err) => return handle_plan_error(err, cli.output.json),
+        };
+        dispatch_plan(&cli, &plan)
+    })
+}
 
-    let result = pool.install(|| match &script {
-        Some(s) => plan_rewrite_scripted(pattern, s, &paths, &opts),
-        None => plan_rewrite(pattern, replacement, &paths, &opts),
-    });
-    let plan = match result {
-        Ok(plan) => plan,
-        Err(err) => return handle_plan_error(err, cli.output.json),
+/// Resolve the structural-mode triple (language, query string, template)
+/// from the CLI. Returns `Ok(None)` for non-structural invocations;
+/// returns `Err` if `--lang` is set but the user didn't supply
+/// `--query`/`--ast` or the lang/pattern doesn't compile.
+fn resolve_structural(cli: &Cli) -> Result<Option<(Language, String, &str)>> {
+    let Some(lang_name) = cli.structural.lang.as_deref() else {
+        return Ok(None);
     };
-
-    pool.install(|| dispatch_plan(&cli, &plan))
+    let template = cli
+        .replacement
+        .as_deref()
+        .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
+    let lang = resolve_lang(lang_name)?;
+    let query = if let Some(q) = cli.structural.query.as_deref() {
+        q.to_owned()
+    } else if let Some(pat) = cli.structural.ast_pattern.as_deref() {
+        recast_core::compile_friendly_query(lang, pat).map_err(anyhow::Error::from)?
+    } else {
+        return Err(anyhow!("--query or --ast required with --lang"));
+    };
+    Ok(Some((lang, query, template)))
 }
 
 fn resolve_lang(name: &str) -> Result<Language> {
