@@ -77,6 +77,54 @@ fn language_from_name_parses_rust() {
     assert!(Language::from_name("zzz").is_none());
 }
 
+#[cfg(feature = "lang-ts")]
+#[test]
+fn typescript_rename_function() {
+    let source = "function oldName(): void {}\nconst x = oldName();";
+    let out = structural_rewrite(
+        Language::TypeScript,
+        source,
+        r#"((identifier) @id (#eq? @id "oldName"))"#,
+        "newName",
+    )
+    .unwrap();
+    assert!(out.text.contains("function newName"));
+    assert!(out.text.contains("newName()"));
+    assert_eq!(out.matches, 2);
+}
+
+#[cfg(feature = "lang-js")]
+#[test]
+fn javascript_rename_identifier() {
+    let source = "const oldName = 1;\nconsole.log(oldName);";
+    let out = structural_rewrite(
+        Language::JavaScript,
+        source,
+        r#"((identifier) @id (#eq? @id "oldName"))"#,
+        "newName",
+    )
+    .unwrap();
+    assert!(out.text.contains("const newName"));
+    assert!(out.text.contains("console.log(newName)"));
+    assert_eq!(out.matches, 2);
+}
+
+#[cfg(feature = "lang-python")]
+#[test]
+fn python_rename_function() {
+    let source = "def old_one():\n    return 1\n\nold_one()\n";
+    let out = structural_rewrite(
+        Language::Python,
+        source,
+        r#"((identifier) @id (#eq? @id "old_one"))"#,
+        "new_one",
+    )
+    .unwrap();
+    assert!(out.text.contains("def new_one"));
+    assert!(out.text.contains("\nnew_one()"));
+    assert_eq!(out.matches, 2);
+}
+
 #[test]
 fn friendly_pattern_renames_function() {
     let source = "fn old_one() {}\nfn other() { old_one(); }";

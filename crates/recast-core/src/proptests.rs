@@ -68,7 +68,7 @@ proptest! {
     }
 }
 
-#[cfg(feature = "structural")]
+#[cfg(feature = "lang-rust")]
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 48,

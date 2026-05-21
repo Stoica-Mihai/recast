@@ -13,13 +13,22 @@ name = "recast"
 path = "src/main.rs"
 
 [dependencies]
-recast-core = { workspace = true, features = ["serde", "script", "structural"] }
+recast-core = { workspace = true, features = ["serde"] }
 anyhow.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde_json.workspace = true
+
+[features]
+default = ["script", "lang-all"]
+script = ["recast-core/script"]
+lang-rust = ["recast-core/lang-rust"]
+lang-ts = ["recast-core/lang-ts"]
+lang-js = ["recast-core/lang-js"]
+lang-python = ["recast-core/lang-python"]
+lang-all = ["lang-rust", "lang-ts", "lang-js", "lang-python"]
 
 [dev-dependencies]
 tempfile.workspace = true

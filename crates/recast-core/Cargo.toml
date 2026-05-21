@@ -19,6 +19,9 @@ rhai = { workspace = true, optional = true }
 thiserror.workspace = true
 tree-sitter = { workspace = true, optional = true }
 tree-sitter-rust = { workspace = true, optional = true }
+tree-sitter-typescript = { workspace = true, optional = true }
+tree-sitter-javascript = { workspace = true, optional = true }
+tree-sitter-python = { workspace = true, optional = true }
 tracing.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -27,7 +30,14 @@ serde_json = { workspace = true, optional = true }
 default = []
 serde = ["dep:serde", "dep:serde_json"]
 script = ["dep:rhai"]
-structural = ["dep:tree-sitter", "dep:tree-sitter-rust"]
+# Structural mode requires at least one `lang-*` feature. Enable
+# `lang-all` to pull in every grammar shipped today, or pick the ones
+# you actually need to keep the binary small.
+lang-rust = ["dep:tree-sitter", "dep:tree-sitter-rust"]
+lang-ts = ["dep:tree-sitter", "dep:tree-sitter-typescript"]
+lang-js = ["dep:tree-sitter", "dep:tree-sitter-javascript"]
+lang-python = ["dep:tree-sitter", "dep:tree-sitter-python"]
+lang-all = ["lang-rust", "lang-ts", "lang-js", "lang-python"]
 
 [dev-dependencies]
 tempfile.workspace = true

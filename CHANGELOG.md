@@ -5,6 +5,30 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
+## [Unreleased]
+
+### Added
+
+- **TypeScript / TSX / JavaScript / Python grammars** for structural
+  mode. `Language` enum now has `Rust | TypeScript | Tsx | JavaScript
+  | Python` variants; CLI names: `rust`/`rs`, `typescript`/`ts`,
+  `tsx`, `javascript`/`js`, `python`/`py`.
+- **Per-language cargo features.** `structural` feature is gone;
+  replaced by `lang-rust`, `lang-ts`, `lang-js`, `lang-python`, and
+  the convenience `lang-all`. At least one `lang-*` must be enabled
+  for structural mode to compile. The `recast` binary defaults to
+  `["script", "lang-all"]` so `cargo install --path crates/recast`
+  still gets the full surface; users can opt out with
+  `--no-default-features --features lang-rust` for a slim binary.
+- **Proptest harness** covering compile / rewrite / template /
+  friendly-pattern paths so adversarial input never panics.
+
+### Breaking
+
+- `--features structural` no longer exists — pick `lang-*` features.
+- `recast-core` workspace dep now has `default-features = false` at
+  the workspace level; downstream `recast` re-opts in.
+
 ## [0.1.2] — 2026-05-21
 
 Windows build hotfix for the release workflow. The `rustix::fs::fsync`

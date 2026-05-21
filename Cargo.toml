@@ -27,6 +27,9 @@ rayon = "1"
 rhai = { version = "1", default-features = false, features = ["std", "no_custom_syntax", "no_module"] }
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-python = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 serde = { version = "1", features = ["derive"] }
@@ -36,7 +39,7 @@ assert_cmd = "2"
 predicates = "3"
 proptest = "1"
 
-recast-core = { path = "crates/recast-core", version = "=0.1.2" }
+recast-core = { path = "crates/recast-core", version = "=0.1.2", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

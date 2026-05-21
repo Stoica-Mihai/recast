@@ -17,7 +17,12 @@ mod proptests;
 mod rewrite;
 #[cfg(feature = "script")]
 mod script;
-#[cfg(feature = "structural")]
+#[cfg(any(
+    feature = "lang-rust",
+    feature = "lang-ts",
+    feature = "lang-js",
+    feature = "lang-python",
+))]
 mod structural;
 mod walker;
 
@@ -33,7 +38,12 @@ pub use rewrite::rewrite_text_scripted;
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
 #[cfg(feature = "script")]
 pub use script::ScriptRewriter;
-#[cfg(feature = "structural")]
+#[cfg(any(
+    feature = "lang-rust",
+    feature = "lang-ts",
+    feature = "lang-js",
+    feature = "lang-python",
+))]
 pub use structural::{
     Language, StructuralOutcome, compile_friendly_query, structural_rewrite,
     structural_rewrite_friendly,

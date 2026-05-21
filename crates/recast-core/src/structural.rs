@@ -13,25 +13,56 @@ const METAVAR_PREFIX: &str = "__RECAST_VAR_";
 const ELLIPSIS_PREFIX: &str = "__RECAST_ELLIPSIS_";
 const METAVAR_SUFFIX: &str = "__";
 
-/// Language registry for structural rewrites. Add a variant per
-/// supported tree-sitter grammar.
+/// Language registry for structural rewrites. Variants are gated by
+/// the matching `lang-*` cargo feature; build with `--features
+/// lang-all` to enable every grammar shipped today.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Language {
+    #[cfg(feature = "lang-rust")]
     Rust,
+    #[cfg(feature = "lang-ts")]
+    TypeScript,
+    #[cfg(feature = "lang-ts")]
+    Tsx,
+    #[cfg(feature = "lang-js")]
+    JavaScript,
+    #[cfg(feature = "lang-python")]
+    Python,
 }
 
 impl Language {
     /// Resolve a CLI-friendly name (case-insensitive) to a language.
+    /// Returns `None` for languages whose `lang-*` feature wasn't
+    /// compiled in.
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_ascii_lowercase().as_str() {
+            #[cfg(feature = "lang-rust")]
             "rust" | "rs" => Some(Language::Rust),
+            #[cfg(feature = "lang-ts")]
+            "typescript" | "ts" => Some(Language::TypeScript),
+            #[cfg(feature = "lang-ts")]
+            "tsx" => Some(Language::Tsx),
+            #[cfg(feature = "lang-js")]
+            "javascript" | "js" => Some(Language::JavaScript),
+            #[cfg(feature = "lang-python")]
+            "python" | "py" => Some(Language::Python),
             _ => None,
         }
     }
 
     fn ts_language(self) -> TsLanguage {
         match self {
+            #[cfg(feature = "lang-rust")]
             Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+            #[cfg(feature = "lang-ts")]
+            Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            #[cfg(feature = "lang-ts")]
+            Language::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
+            #[cfg(feature = "lang-js")]
+            Language::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            #[cfg(feature = "lang-python")]
+            Language::Python => tree_sitter_python::LANGUAGE.into(),
         }
     }
 }
