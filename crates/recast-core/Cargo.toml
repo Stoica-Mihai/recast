@@ -61,6 +61,12 @@ lang-all = [
 tempfile.workspace = true
 insta.workspace = true
 proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "engine"
+harness = false
+required-features = ["lang-rust", "script"]
 
 [lints]
 workspace = true
