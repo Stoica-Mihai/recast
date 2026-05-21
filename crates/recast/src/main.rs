@@ -72,6 +72,20 @@ struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     no_ignore: bool,
 
+    /// Only files of this type (e.g. `rust`, `js`, `py`). Mirrors ripgrep
+    /// `--type`. Repeatable.
+    #[arg(short = 't', long = "type", value_name = "LANG", action = ArgAction::Append)]
+    type_: Vec<String>,
+
+    /// Exclude files of this type. Repeatable.
+    #[arg(short = 'T', long = "type-not", value_name = "LANG", action = ArgAction::Append)]
+    type_not: Vec<String>,
+
+    /// Include/exclude glob (`!pattern` to exclude). Repeatable. Globs are
+    /// applied relative to the first path argument.
+    #[arg(short = 'g', long = "glob", value_name = "GLOB", action = ArgAction::Append)]
+    glob: Vec<String>,
+
     /// Treat pattern and replacement as literal strings.
     #[arg(short = 'L', long, action = ArgAction::SetTrue)]
     literal: bool,
@@ -109,6 +123,9 @@ impl Cli {
                 hidden: self.hidden,
                 no_ignore: self.no_ignore,
                 follow_symlinks: false,
+                types: self.type_.clone(),
+                types_not: self.type_not.clone(),
+                globs: self.glob.clone(),
             },
             at_least: Some(self.at_least.unwrap_or(1)),
             at_most: self.at_most,
