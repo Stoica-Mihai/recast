@@ -318,30 +318,51 @@ pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
     }
 
     let mut summary = RecoverySummary::default();
+    // Aggregate errors so one bad group doesn't abort the sweep: the user
+    // calls --recover precisely because the tree is in a partial state, and
+    // bailing on the first failure leaves the rest unreconciled. The first
+    // error is propagated after every group has been attempted so callers
+    // still see a typed failure.
+    let mut first_error: Option<Error> = None;
     for (target, mut group) in groups {
         group.backups.sort_by_key(|(n, _)| *n);
         group.temps.sort_by_key(|(n, _)| *n);
         if target.exists() {
-            remove_nonced(&group.backups, &mut summary.backups_removed)?;
-            remove_nonced(&group.temps, &mut summary.temps_removed)?;
+            remove_nonced(&group.backups, &mut summary.backups_removed, &mut first_error);
+            remove_nonced(&group.temps, &mut summary.temps_removed, &mut first_error);
             continue;
         }
         if let Some((_, newest)) = group.backups.pop() {
-            fs::rename(&newest, &target).io_ctx(&newest)?;
-            summary.backups_restored += 1;
-            remove_nonced(&group.backups, &mut summary.backups_removed)?;
-            remove_nonced(&group.temps, &mut summary.temps_removed)?;
+            match fs::rename(&newest, &target).io_ctx(&newest) {
+                Ok(()) => summary.backups_restored += 1,
+                Err(e) => {
+                    if first_error.is_none() {
+                        first_error = Some(e);
+                    }
+                    continue;
+                }
+            }
+            remove_nonced(&group.backups, &mut summary.backups_removed, &mut first_error);
+            remove_nonced(&group.temps, &mut summary.temps_removed, &mut first_error);
         }
+    }
+    if let Some(e) = first_error {
+        return Err(e);
     }
     Ok(summary)
 }
 
-fn remove_nonced(entries: &[(u64, PathBuf)], counter: &mut usize) -> Result<()> {
+fn remove_nonced(entries: &[(u64, PathBuf)], counter: &mut usize, first_error: &mut Option<Error>) {
     for (_, p) in entries {
-        fs::remove_file(p).io_ctx(p)?;
-        *counter += 1;
+        match fs::remove_file(p).io_ctx(p) {
+            Ok(()) => *counter += 1,
+            Err(e) => {
+                if first_error.is_none() {
+                    *first_error = Some(e);
+                }
+            }
+        }
     }
-    Ok(())
 }
 
 #[derive(Default)]
