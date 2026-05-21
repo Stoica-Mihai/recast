@@ -9,7 +9,8 @@ use std::fs;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use recast_core::{
-    CompiledPattern, Language, PatternOptions, PlanOptions, plan_rewrite, structural_rewrite,
+    CompiledPattern, Language, PatternOptions, PlanOptions, plan_rewrite, plan_structural_rewrite,
+    structural_rewrite,
 };
 use tempfile::TempDir;
 
@@ -80,5 +81,33 @@ fn bench_structural_rewrite(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_pattern_compile, bench_plan_rewrite, bench_structural_rewrite);
+fn bench_plan_structural_rewrite(c: &mut Criterion) {
+    let mut group = c.benchmark_group("plan_structural_rewrite");
+    for size in [10usize, 100, 500] {
+        let dir = fixture(size);
+        let root = dir.path().to_path_buf();
+        group.bench_function(format!("{size}_files"), |b| {
+            b.iter(|| {
+                let plan = plan_structural_rewrite(
+                    Language::Rust,
+                    r#"(identifier) @id"#,
+                    "X",
+                    &[&root],
+                    &PlanOptions { at_least: Some(0), ..PlanOptions::default() },
+                )
+                .unwrap();
+                std::hint::black_box(plan);
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_pattern_compile,
+    bench_plan_rewrite,
+    bench_structural_rewrite,
+    bench_plan_structural_rewrite,
+);
 criterion_main!(benches);

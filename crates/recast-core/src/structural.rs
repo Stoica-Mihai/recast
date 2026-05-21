@@ -7,6 +7,7 @@
 
 use std::path::Path;
 
+use rayon::prelude::*;
 use tree_sitter::{Language as TsLanguage, Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::error::{Error, Result};
@@ -106,74 +107,133 @@ pub struct StructuralOutcome {
     pub matches: usize,
 }
 
-/// Run a tree-sitter Query against `source`, substitute captures into
-/// `template` per match, and splice the resulting text into the source
-/// at each match's replacement range. Overlapping match ranges are
-/// resolved greedy-first: the first match by start offset wins, later
-/// overlaps are skipped.
-pub fn structural_rewrite(
-    lang: Language,
-    source: &str,
-    query_src: &str,
-    template: &str,
-) -> Result<StructuralOutcome> {
-    let ts_lang = lang.ts_language();
-    let mut parser = Parser::new();
-    parser.set_language(&ts_lang).map_err(|e| Error::StructuralQuery(e.to_string()))?;
-
-    let tree = parser.parse(source, None).ok_or(Error::StructuralParse)?;
-    let query = Query::new(&ts_lang, query_src)
-        .map_err(|e| Error::StructuralQuery(format_query_error(query_src, &e)))?;
-    let capture_names: Vec<&str> = query.capture_names().to_vec();
-    let root_capture_idx = capture_names.iter().position(|n| *n == "root");
-
-    let mut cursor = QueryCursor::new();
-    let mut hits: Vec<(usize, usize, String)> = Vec::new();
-    let bytes = source.as_bytes();
-    let mut iter = cursor.matches(&query, tree.root_node(), bytes);
-    while let Some(m) = iter.next() {
-        let primary_capture_idx = root_capture_idx
-            .unwrap_or_else(|| m.captures.iter().map(|c| c.index as usize).max().unwrap_or(0));
-        let primary =
-            m.captures.iter().find(|c| c.index as usize == primary_capture_idx).ok_or_else(
-                || {
-                    Error::StructuralQuery(format!(
-                        "match did not bind primary capture index {primary_capture_idx}"
-                    ))
-                },
-            )?;
-        let start = primary.node.start_byte();
-        let end = primary.node.end_byte();
-
-        let replacement = render_template(template, source, &capture_names, m.captures)?;
-        hits.push((start, end, replacement));
-    }
-    hits.sort_by_key(|h| h.0);
-
-    let mut out = String::with_capacity(source.len());
-    let mut cursor_byte = 0usize;
-    let mut applied = 0usize;
-    for (start, end, replacement) in &hits {
-        if *start < cursor_byte {
-            continue;
-        }
-        out.push_str(&source[cursor_byte..*start]);
-        out.push_str(replacement);
-        cursor_byte = *end;
-        applied += 1;
-    }
-    out.push_str(&source[cursor_byte..]);
-
-    Ok(StructuralOutcome { text: out, matches: applied })
+/// One slice of the parsed rewrite template. Literals are pre-joined
+/// strings between captures; captures resolve to a known capture index
+/// in the compiled query.
+enum TemplatePart {
+    Literal(String),
+    Capture { index: usize, name: String },
 }
 
-fn render_template(
-    template: &str,
-    source: &str,
-    capture_names: &[&str],
-    captures: &[tree_sitter::QueryCapture<'_>],
-) -> Result<String> {
-    let mut out = String::with_capacity(template.len());
+/// A compiled structural-rewrite job: language, query, capture index
+/// table, and the rewrite template pre-resolved to a sequence of
+/// literal/capture parts. Built once per invocation and applied to every
+/// candidate file — that's the whole point of pulling parsing out of
+/// the per-file loop.
+struct CompiledStructural {
+    ts_lang: TsLanguage,
+    query: Query,
+    root_capture_idx: Option<usize>,
+    template_parts: Vec<TemplatePart>,
+}
+
+impl CompiledStructural {
+    fn compile(lang: Language, query_src: &str, template: &str) -> Result<Self> {
+        let ts_lang = lang.ts_language();
+        // Probe the language by configuring a throwaway parser. Catches
+        // ABI mismatch up front so the per-thread workers can rely on
+        // `set_language` succeeding without surfacing late errors.
+        let mut probe = Parser::new();
+        probe.set_language(&ts_lang).map_err(|e| Error::StructuralQuery(e.to_string()))?;
+
+        let query = Query::new(&ts_lang, query_src)
+            .map_err(|e| Error::StructuralQuery(format_query_error(query_src, &e)))?;
+        let capture_names: Vec<&str> = query.capture_names().to_vec();
+        let root_capture_idx = capture_names.iter().position(|n| *n == "root");
+        let template_parts = parse_template(template, &capture_names)?;
+
+        Ok(Self { ts_lang, query, root_capture_idx, template_parts })
+    }
+
+    fn new_parser(&self) -> Parser {
+        let mut parser = Parser::new();
+        // Language ABI was validated in `compile`, so this call is
+        // infallible in practice. If it somehow does fail, the parser
+        // stays in its unset state and the next `parse()` returns None,
+        // surfacing as Error::StructuralParse — no panic, defined
+        // behavior.
+        let _ = parser.set_language(&self.ts_lang);
+        parser
+    }
+
+    fn apply(
+        &self,
+        parser: &mut Parser,
+        cursor: &mut QueryCursor,
+        source: &str,
+    ) -> Result<StructuralOutcome> {
+        let tree = parser.parse(source, None).ok_or(Error::StructuralParse)?;
+        let bytes = source.as_bytes();
+
+        let mut hits: Vec<(usize, usize, String)> = Vec::new();
+        let mut iter = cursor.matches(&self.query, tree.root_node(), bytes);
+        while let Some(m) = iter.next() {
+            let primary_idx = self
+                .root_capture_idx
+                .unwrap_or_else(|| m.captures.iter().map(|c| c.index as usize).max().unwrap_or(0));
+            let primary =
+                m.captures.iter().find(|c| c.index as usize == primary_idx).ok_or_else(|| {
+                    Error::StructuralQuery(format!(
+                        "match did not bind primary capture index {primary_idx}"
+                    ))
+                })?;
+            let start = primary.node.start_byte();
+            let end = primary.node.end_byte();
+
+            let replacement = self.render(source, m.captures)?;
+            hits.push((start, end, replacement));
+        }
+        hits.sort_by_key(|h| h.0);
+
+        let mut out = String::with_capacity(source.len());
+        let mut cursor_byte = 0usize;
+        let mut applied = 0usize;
+        for (start, end, replacement) in &hits {
+            if *start < cursor_byte {
+                continue;
+            }
+            out.push_str(&source[cursor_byte..*start]);
+            out.push_str(replacement);
+            cursor_byte = *end;
+            applied += 1;
+        }
+        out.push_str(&source[cursor_byte..]);
+        Ok(StructuralOutcome { text: out, matches: applied })
+    }
+
+    fn render(&self, source: &str, captures: &[tree_sitter::QueryCapture<'_>]) -> Result<String> {
+        let mut out = String::with_capacity(self.template_size_hint());
+        for part in &self.template_parts {
+            match part {
+                TemplatePart::Literal(s) => out.push_str(s),
+                TemplatePart::Capture { index, name } => {
+                    let cap =
+                        captures.iter().find(|c| c.index as usize == *index).ok_or_else(|| {
+                            Error::StructuralTemplate(format!(
+                                "capture `${name}` did not bind in this match"
+                            ))
+                        })?;
+                    out.push_str(&source[cap.node.start_byte()..cap.node.end_byte()]);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn template_size_hint(&self) -> usize {
+        self.template_parts
+            .iter()
+            .map(|p| match p {
+                TemplatePart::Literal(s) => s.len(),
+                TemplatePart::Capture { .. } => 16,
+            })
+            .sum()
+    }
+}
+
+fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<TemplatePart>> {
+    let mut parts: Vec<TemplatePart> = Vec::new();
+    let mut literal = String::new();
     let bytes = template.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -181,7 +241,7 @@ fn render_template(
         if b == b'$' && i + 1 < bytes.len() {
             let next = bytes[i + 1];
             if next == b'$' {
-                out.push('$');
+                literal.push('$');
                 i += 2;
                 continue;
             }
@@ -193,15 +253,8 @@ fn render_template(
                 let cap_idx = capture_names.iter().position(|n| *n == name).ok_or_else(|| {
                     Error::StructuralTemplate(format!("no capture named `${{{name}}}` in query"))
                 })?;
-                let cap =
-                    captures.iter().find(|c| c.index as usize == cap_idx).ok_or_else(|| {
-                        Error::StructuralTemplate(format!(
-                            "capture `${{{name}}}` did not bind in this match"
-                        ))
-                    })?;
-                let start = cap.node.start_byte();
-                let end = cap.node.end_byte();
-                out.push_str(&source[start..end]);
+                flush_literal(&mut literal, &mut parts);
+                parts.push(TemplatePart::Capture { index: cap_idx, name: name.to_owned() });
                 i += 2 + close + 1;
                 continue;
             }
@@ -214,23 +267,40 @@ fn render_template(
                 let cap_idx = capture_names.iter().position(|n| *n == name).ok_or_else(|| {
                     Error::StructuralTemplate(format!("no capture named `${name}` in query"))
                 })?;
-                let cap =
-                    captures.iter().find(|c| c.index as usize == cap_idx).ok_or_else(|| {
-                        Error::StructuralTemplate(format!(
-                            "capture `${name}` did not bind in this match"
-                        ))
-                    })?;
-                let start = cap.node.start_byte();
-                let end = cap.node.end_byte();
-                out.push_str(&source[start..end]);
+                flush_literal(&mut literal, &mut parts);
+                parts.push(TemplatePart::Capture { index: cap_idx, name: name.to_owned() });
                 i = j;
                 continue;
             }
         }
-        out.push(b as char);
+        literal.push(b as char);
         i += 1;
     }
-    Ok(out)
+    flush_literal(&mut literal, &mut parts);
+    Ok(parts)
+}
+
+fn flush_literal(literal: &mut String, parts: &mut Vec<TemplatePart>) {
+    if !literal.is_empty() {
+        parts.push(TemplatePart::Literal(std::mem::take(literal)));
+    }
+}
+
+/// Run a tree-sitter Query against `source`, substitute captures into
+/// `template` per match, and splice the resulting text into the source
+/// at each match's replacement range. Overlapping match ranges are
+/// resolved greedy-first: the first match by start offset wins, later
+/// overlaps are skipped.
+pub fn structural_rewrite(
+    lang: Language,
+    source: &str,
+    query_src: &str,
+    template: &str,
+) -> Result<StructuralOutcome> {
+    let compiled = CompiledStructural::compile(lang, query_src, template)?;
+    let mut parser = compiled.new_parser();
+    let mut cursor = QueryCursor::new();
+    compiled.apply(&mut parser, &mut cursor, source)
 }
 
 /// Multi-file structural pipeline. Walks `roots`, applies
@@ -240,6 +310,10 @@ fn render_template(
 /// `at_most` match-count guard from `opts`. The convergence check and
 /// scripted-callback variants don't apply here — structural rewrites
 /// aren't re-probed against their own output.
+///
+/// The compiled query, capture-index table, and parsed rewrite template
+/// are built once and shared read-only across the per-file workers; only
+/// the tree-sitter `Parser` and `QueryCursor` are per-thread.
 pub fn plan_structural_rewrite<P: AsRef<Path>>(
     lang: Language,
     query: &str,
@@ -251,29 +325,26 @@ pub fn plan_structural_rewrite<P: AsRef<Path>>(
     if files.len() > opts.max_files {
         return Err(Error::TooManyFiles { count: files.len(), limit: opts.max_files });
     }
-
-    let mut changes: Vec<FileChange> = Vec::new();
-    for path in &files {
-        let before = match read_text_or_skip_binary(path, opts.max_bytes)? {
-            Some(s) => s,
-            None => continue,
-        };
-        let outcome = structural_rewrite(lang, &before, query, template)?;
-        if outcome.text == before {
-            continue;
-        }
-        let label = label_for_path(path);
-        let diff = unified_diff(&label, &before, &outcome.text);
-        changes.push(FileChange {
-            path: path.clone(),
-            matches: outcome.matches,
-            before,
-            after: outcome.text,
-            diff,
-        });
-    }
-    let total_matches: usize = changes.iter().map(|c| c.matches).sum();
     let files_scanned = files.len();
+
+    let compiled = CompiledStructural::compile(lang, query, template)?;
+
+    let results: Vec<Result<Option<FileChange>>> = files
+        .par_iter()
+        .map_init(
+            || (compiled.new_parser(), QueryCursor::new()),
+            |(parser, cursor), path| plan_one(&compiled, parser, cursor, path, opts),
+        )
+        .collect();
+
+    let mut changes: Vec<FileChange> = Vec::with_capacity(files_scanned);
+    for r in results {
+        if let Some(change) = r? {
+            changes.push(change);
+        }
+    }
+
+    let total_matches: usize = changes.iter().map(|c| c.matches).sum();
     if total_matches == 0 {
         return Ok(Plan {
             changes: Vec::new(),
@@ -284,6 +355,32 @@ pub fn plan_structural_rewrite<P: AsRef<Path>>(
     }
     check_match_counts(total_matches, opts.at_least, opts.at_most)?;
     Ok(Plan { changes, total_matches, files_scanned, outcome: PlanOutcome::Changes })
+}
+
+fn plan_one(
+    compiled: &CompiledStructural,
+    parser: &mut Parser,
+    cursor: &mut QueryCursor,
+    path: &Path,
+    opts: &PlanOptions,
+) -> Result<Option<FileChange>> {
+    let before = match read_text_or_skip_binary(path, opts.max_bytes)? {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+    let outcome = compiled.apply(parser, cursor, &before)?;
+    if outcome.text == before {
+        return Ok(None);
+    }
+    let label = label_for_path(path);
+    let diff = unified_diff(&label, &before, &outcome.text);
+    Ok(Some(FileChange {
+        path: path.to_path_buf(),
+        matches: outcome.matches,
+        before,
+        after: outcome.text,
+        diff,
+    }))
 }
 
 /// Friendlier counterpart to [`structural_rewrite`]: `pattern_source`
@@ -317,10 +414,6 @@ pub fn structural_rewrite_friendly(
 /// placeholders) into a tree-sitter Query string. Exposed for callers
 /// that want to inspect or further manipulate the query.
 pub fn compile_friendly_query(lang: Language, pattern: &str) -> Result<String> {
-    compile_friendly_pattern(lang, pattern)
-}
-
-fn compile_friendly_pattern(lang: Language, pattern: &str) -> Result<String> {
     let substituted = substitute_metavars(pattern);
     let ts_lang = lang.ts_language();
     let mut parser = Parser::new();
