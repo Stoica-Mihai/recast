@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use tracing::{debug, trace};
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoCtx, Result};
 use crate::pattern::{CompiledPattern, PatternOptions};
 #[cfg(feature = "script")]
 use crate::rewrite::rewrite_text_scripted;
@@ -189,18 +189,31 @@ fn finalize_plan(
         });
     }
 
-    if let Some(min) = opts.at_least
-        && total_matches < min
-    {
-        return Err(Error::TooFewMatches { found: total_matches, required: min });
-    }
-    if let Some(max) = opts.at_most
-        && total_matches > max
-    {
-        return Err(Error::TooManyMatches { found: total_matches, allowed: max });
-    }
+    check_match_counts(total_matches, opts.at_least, opts.at_most)?;
 
     Ok(Plan { changes, total_matches, files_scanned, outcome: PlanOutcome::Changes })
+}
+
+/// Enforce the `--at-least` / `--at-most` match-count guard. Returns
+/// [`Error::TooFewMatches`] / [`Error::TooManyMatches`] when the
+/// guard is violated; both variants map to the
+/// `EXIT_GUARD_VIOLATED` (2) exit code at the binary boundary.
+pub fn check_match_counts(
+    found: usize,
+    at_least: Option<usize>,
+    at_most: Option<usize>,
+) -> Result<()> {
+    if let Some(min) = at_least
+        && found < min
+    {
+        return Err(Error::TooFewMatches { found, required: min });
+    }
+    if let Some(max) = at_most
+        && found > max
+    {
+        return Err(Error::TooManyMatches { found, allowed: max });
+    }
+    Ok(())
 }
 
 fn process_one<F>(
@@ -212,8 +225,7 @@ fn process_one<F>(
 where
     F: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
 {
-    let metadata =
-        fs::metadata(path).map_err(|e| Error::Io { path: path.to_path_buf(), source: e })?;
+    let metadata = fs::metadata(path).io_ctx(path)?;
     if metadata.len() > opts.max_bytes {
         return Err(Error::FileTooLarge {
             path: path.to_path_buf(),

@@ -11,7 +11,7 @@ use std::path::Path;
 
 use rhai::{AST, Array, Dynamic, Engine, Scope};
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoCtx, Result};
 
 /// Pre-compiled Rhai script used as a per-match replacement callback.
 pub struct ScriptRewriter {
@@ -36,8 +36,7 @@ impl ScriptRewriter {
 
     /// Read the script from `path` and compile it.
     pub fn from_file(path: &Path) -> Result<Self> {
-        let source = fs::read_to_string(path)
-            .map_err(|e| Error::Io { path: path.to_path_buf(), source: e })?;
+        let source = fs::read_to_string(path).io_ctx(path)?;
         Self::from_source(&source)
     }
 

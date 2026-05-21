@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{debug, trace};
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoCtx, Result};
 use crate::plan::{FileChange, Plan};
 
 /// Returned by [`apply_changes`] on success: how many files were
@@ -104,25 +104,18 @@ fn stage_all(changes: &[FileChange]) -> Result<Vec<Staged>> {
 }
 
 fn stage_one(change: &FileChange) -> Result<Staged> {
-    let parent = change.path.parent().ok_or_else(|| Error::Io {
-        path: change.path.clone(),
-        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent directory"),
-    })?;
+    let parent = parent_dir(&change.path)?;
 
     let permissions = fs::metadata(&change.path).map(|m| m.permissions()).ok();
 
     let temp_name = sibling_temp_name(&change.path, "tmp");
     let temp_path = parent.join(&temp_name);
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temp_path)
-        .map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
-    file.write_all(change.after.as_bytes())
-        .map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
-    file.flush().map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
-    file.sync_all().map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
+    let mut file =
+        OpenOptions::new().write(true).create_new(true).open(&temp_path).io_ctx(&temp_path)?;
+    file.write_all(change.after.as_bytes()).io_ctx(&temp_path)?;
+    file.flush().io_ctx(&temp_path)?;
+    file.sync_all().io_ctx(&temp_path)?;
     drop(file);
 
     if let Some(perm) = permissions
@@ -133,6 +126,13 @@ fn stage_one(change: &FileChange) -> Result<Staged> {
     }
 
     Ok(Staged { target: change.path.clone(), temp_path })
+}
+
+fn parent_dir(path: &Path) -> Result<&Path> {
+    path.parent().ok_or_else(|| Error::Io {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent directory"),
+    })
 }
 
 struct CommitFailure {
@@ -166,17 +166,9 @@ where
 fn commit_one(staged: &Staged) -> Result<Committed> {
     trace!(target = %staged.target.display(), "commit: rename");
     let backup_name = sibling_temp_name(&staged.target, "bak");
-    let backup_path = staged
-        .target
-        .parent()
-        .ok_or_else(|| Error::Io {
-            path: staged.target.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent directory"),
-        })?
-        .join(&backup_name);
+    let backup_path = parent_dir(&staged.target)?.join(&backup_name);
 
-    fs::rename(&staged.target, &backup_path)
-        .map_err(|e| Error::Io { path: staged.target.clone(), source: e })?;
+    fs::rename(&staged.target, &backup_path).io_ctx(&staged.target)?;
 
     if let Err(e) = fs::rename(&staged.temp_path, &staged.target) {
         let _ = fs::rename(&backup_path, &staged.target);
@@ -283,31 +275,26 @@ pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
         group.backups.sort_by_key(|(n, _)| *n);
         group.temps.sort_by_key(|(n, _)| *n);
         if target.exists() {
-            for (_, p) in &group.backups {
-                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
-                summary.backups_removed += 1;
-            }
-            for (_, p) in &group.temps {
-                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
-                summary.temps_removed += 1;
-            }
+            remove_nonced(&group.backups, &mut summary.backups_removed)?;
+            remove_nonced(&group.temps, &mut summary.temps_removed)?;
             continue;
         }
         if let Some((_, newest)) = group.backups.pop() {
-            fs::rename(&newest, &target)
-                .map_err(|e| Error::Io { path: newest.clone(), source: e })?;
+            fs::rename(&newest, &target).io_ctx(&newest)?;
             summary.backups_restored += 1;
-            for (_, p) in &group.backups {
-                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
-                summary.backups_removed += 1;
-            }
-            for (_, p) in &group.temps {
-                fs::remove_file(p).map_err(|e| Error::Io { path: p.clone(), source: e })?;
-                summary.temps_removed += 1;
-            }
+            remove_nonced(&group.backups, &mut summary.backups_removed)?;
+            remove_nonced(&group.temps, &mut summary.temps_removed)?;
         }
     }
     Ok(summary)
+}
+
+fn remove_nonced(entries: &[(u64, PathBuf)], counter: &mut usize) -> Result<()> {
+    for (_, p) in entries {
+        fs::remove_file(p).io_ctx(p)?;
+        *counter += 1;
+    }
+    Ok(())
 }
 
 #[derive(Default)]

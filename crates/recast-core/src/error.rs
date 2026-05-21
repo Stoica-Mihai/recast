@@ -4,7 +4,7 @@
 //! [`crate::json::ErrorKind`] discriminator (under the `serde` feature)
 //! tags each variant for machine consumption.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -62,3 +62,17 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Extension that converts a `std::io::Result<T>` into a `crate::Result<T>`
+/// by attaching the offending path to the `Error::Io` variant. Cuts the
+/// repeated `|e| Error::Io { path: ..., source: e }` closure that would
+/// otherwise show up at every `fs::*` call site.
+pub(crate) trait IoCtx<T> {
+    fn io_ctx(self, path: &Path) -> Result<T>;
+}
+
+impl<T> IoCtx<T> for std::result::Result<T, std::io::Error> {
+    fn io_ctx(self, path: &Path) -> Result<T> {
+        self.map_err(|source| Error::Io { path: path.to_path_buf(), source })
+    }
+}

@@ -34,7 +34,7 @@ pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};
 #[cfg(feature = "script")]
 pub use plan::plan_rewrite_scripted;
-pub use plan::{FileChange, Plan, PlanOptions, PlanOutcome, plan_rewrite};
+pub use plan::{FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, plan_rewrite};
 #[cfg(feature = "script")]
 pub use rewrite::rewrite_text_scripted;
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
@@ -47,7 +47,7 @@ pub use script::ScriptRewriter;
     feature = "lang-python",
 ))]
 pub use structural::{
-    Language, StructuralOutcome, compile_friendly_query, structural_rewrite,
-    structural_rewrite_friendly,
+    Language, StructuralOutcome, compile_friendly_query, plan_structural_rewrite,
+    structural_rewrite, structural_rewrite_friendly,
 };
 pub use walker::{WalkOptions, walk_paths};

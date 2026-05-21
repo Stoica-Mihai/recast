@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoCtx, Result};
 
 /// RAII guard around an exclusively-locked lockfile. Drop to release.
 #[derive(Debug)]
@@ -40,8 +40,7 @@ impl Drop for WorkspaceLock {
 /// [`Error::Locked`] immediately if another process already holds it.
 pub fn acquire_workspace_lock(lock_path: &Path) -> Result<WorkspaceLock> {
     if let Some(parent) = lock_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| Error::Io { path: lock_path.to_path_buf(), source: e })?;
+        std::fs::create_dir_all(parent).io_ctx(lock_path)?;
     }
     let file = OpenOptions::new()
         .read(true)
@@ -49,7 +48,7 @@ pub fn acquire_workspace_lock(lock_path: &Path) -> Result<WorkspaceLock> {
         .create(true)
         .truncate(false)
         .open(lock_path)
-        .map_err(|e| Error::Io { path: lock_path.to_path_buf(), source: e })?;
+        .io_ctx(lock_path)?;
 
     file.try_lock_exclusive().map_err(|_| Error::Locked { path: lock_path.to_path_buf() })?;
     Ok(WorkspaceLock { file, path: lock_path.to_path_buf() })

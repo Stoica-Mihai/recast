@@ -5,9 +5,15 @@
 //! them as `$name`. The capture named `@root` (or, if absent, the
 //! outermost match node) defines the byte range that gets replaced.
 
+use std::fs;
+use std::path::Path;
+
 use tree_sitter::{Language as TsLanguage, Node, Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoCtx, Result};
+use crate::plan::{FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts};
+use crate::rewrite::{label_for_path, unified_diff};
+use crate::walker::walk_paths;
 
 const METAVAR_PREFIX: &str = "__RECAST_VAR_";
 const ELLIPSIS_PREFIX: &str = "__RECAST_ELLIPSIS_";
@@ -224,6 +230,68 @@ fn render_template(
         i += 1;
     }
     Ok(out)
+}
+
+/// Multi-file structural pipeline. Walks `roots`, applies
+/// [`structural_rewrite`] per file, and folds the results into a
+/// [`Plan`] that callers can pipe into [`crate::apply_changes`]. Honors
+/// `walk_options`, `max_files`, `max_bytes`, and the `at_least` /
+/// `at_most` match-count guard from `opts`. The convergence check and
+/// scripted-callback variants don't apply here — structural rewrites
+/// aren't re-probed against their own output.
+pub fn plan_structural_rewrite<P: AsRef<Path>>(
+    lang: Language,
+    query: &str,
+    template: &str,
+    roots: &[P],
+    opts: &PlanOptions,
+) -> Result<Plan> {
+    let files = walk_paths(roots, &opts.walk_options)?;
+    if files.len() > opts.max_files {
+        return Err(Error::TooManyFiles { count: files.len(), limit: opts.max_files });
+    }
+
+    let mut changes: Vec<FileChange> = Vec::new();
+    for path in &files {
+        let metadata = fs::metadata(path).io_ctx(path)?;
+        if metadata.len() > opts.max_bytes {
+            return Err(Error::FileTooLarge {
+                path: path.clone(),
+                size: metadata.len(),
+                limit: opts.max_bytes,
+            });
+        }
+        let before = match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => continue,
+            Err(e) => return Err(Error::Io { path: path.clone(), source: e }),
+        };
+        let outcome = structural_rewrite(lang, &before, query, template)?;
+        if outcome.text == before {
+            continue;
+        }
+        let label = label_for_path(path);
+        let diff = unified_diff(&label, &before, &outcome.text);
+        changes.push(FileChange {
+            path: path.clone(),
+            matches: outcome.matches,
+            before,
+            after: outcome.text,
+            diff,
+        });
+    }
+    let total_matches: usize = changes.iter().map(|c| c.matches).sum();
+    let files_scanned = files.len();
+    if total_matches == 0 {
+        return Ok(Plan {
+            changes: Vec::new(),
+            total_matches: 0,
+            files_scanned,
+            outcome: PlanOutcome::AlreadyApplied,
+        });
+    }
+    check_match_counts(total_matches, opts.at_least, opts.at_most)?;
+    Ok(Plan { changes, total_matches, files_scanned, outcome: PlanOutcome::Changes })
 }
 
 /// Friendlier counterpart to [`structural_rewrite`]: `pattern_source`

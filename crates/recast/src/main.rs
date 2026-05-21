@@ -8,10 +8,10 @@ use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
-    CompiledPattern, Error as CoreError, FileChange, Language, PatternOptions, Plan, PlanOptions,
-    PlanOutcome, ScriptRewriter, WalkOptions, WorkspaceLock, acquire_workspace_lock, apply_changes,
-    build_pool, json, plan_rewrite, plan_rewrite_scripted, recover_sweep, rewrite_text,
-    rewrite_text_scripted, structural_rewrite,
+    CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
+    ScriptRewriter, WalkOptions, WorkspaceLock, acquire_workspace_lock, apply_changes, build_pool,
+    check_match_counts, json, plan_rewrite, plan_rewrite_scripted, plan_structural_rewrite,
+    recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
 };
 
 const EXIT_OK: u8 = 0;
@@ -359,105 +359,43 @@ fn run_structural(cli: &Cli, lang_name: &str, query: &str, template: &str) -> Re
             Ok(o) => o,
             Err(e) => return Ok(handle_plan_error(e, cli.json)),
         };
-        if let Some(min) = cli.at_least.or(Some(1))
-            && outcome.matches < min
+        if let Err(e) =
+            check_match_counts(outcome.matches, Some(cli.at_least.unwrap_or(1)), cli.at_most)
         {
-            eprintln!(
-                "recast: match-count guard violated: found {}, required at least {}",
-                outcome.matches, min
-            );
-            return Ok(EXIT_GUARD_VIOLATED);
+            return Ok(handle_plan_error(e, cli.json));
         }
         io::stdout().lock().write_all(outcome.text.as_bytes()).context("write stdout")?;
         return Ok(EXIT_OK);
     }
 
     let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
-    let walk_opts = cli.plan_options().walk_options;
-    let files = recast_core::walk_paths(&paths, &walk_opts).context("walk paths")?;
-
-    let mut total_matches = 0usize;
-    let mut files_changed: Vec<(PathBuf, String, String, usize)> = Vec::new();
-    for path in &files {
-        let before = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => continue,
-            Err(e) => return Err(e).context(format!("read {}", path.display())),
-        };
-        let outcome = match structural_rewrite(lang, &before, query, template) {
-            Ok(o) => o,
-            Err(e) => return Ok(handle_plan_error(e, cli.json)),
-        };
-        if outcome.text == before {
-            continue;
-        }
-        total_matches += outcome.matches;
-        files_changed.push((path.clone(), before, outcome.text, outcome.matches));
-    }
-
-    if let Some(min) = cli.at_least.or(Some(1))
-        && total_matches < min
-    {
-        return Ok(handle_plan_error(
-            CoreError::TooFewMatches { found: total_matches, required: min },
-            cli.json,
-        ));
-    }
-
-    if cli.check {
-        if cli.json {
-            println!(
-                r#"{{"kind":"check","outcome":"changes","files_scanned":{},"files_would_change":{},"total_matches":{}}}"#,
-                files.len(),
-                files_changed.len(),
-                total_matches
-            );
-        }
-        return Ok(if files_changed.is_empty() { EXIT_OK } else { EXIT_CHECK_WOULD_CHANGE });
-    }
+    let opts = cli.plan_options();
+    let plan = match plan_structural_rewrite(lang, query, template, &paths, &opts) {
+        Ok(p) => p,
+        Err(e) => return Ok(handle_plan_error(e, cli.json)),
+    };
 
     if cli.apply {
-        let changes: Vec<FileChange> = files_changed
-            .iter()
-            .map(|(path, before, after, matches)| {
-                let label = recast_core::label_for_path(path);
-                let diff = recast_core::unified_diff(&label, before, after);
-                FileChange {
-                    path: path.clone(),
-                    matches: *matches,
-                    before: before.clone(),
-                    after: after.clone(),
-                    diff,
-                }
-            })
-            .collect();
-        let plan = Plan {
-            changes,
-            total_matches,
-            files_scanned: files.len(),
-            outcome: PlanOutcome::Changes,
-        };
+        emit_apply(cli, &plan).context("emit apply output")?;
         let outcome = apply_changes(&plan).context("apply changes")?;
-        eprintln!(
-            "recast: applying {} file(s), {} match(es).",
-            outcome.files_written, outcome.total_matches
-        );
+        if cli.json {
+            println!("{}", json::from_apply(&plan, &outcome).to_line()?);
+        }
         return Ok(EXIT_OK);
     }
 
-    let mut stdout = io::stdout().lock();
-    for (path, before, after, _matches) in &files_changed {
-        let label = recast_core::label_for_path(path);
-        let diff = recast_core::unified_diff(&label, before, after);
-        stdout.write_all(diff.as_bytes())?;
+    if cli.check {
+        let would_change = plan.changes.len();
+        if cli.json {
+            println!("{}", json::from_check(&plan).to_line()?);
+        }
+        if matches!(plan.outcome, PlanOutcome::AlreadyApplied) || would_change == 0 {
+            return Ok(EXIT_OK);
+        }
+        return Ok(EXIT_CHECK_WOULD_CHANGE);
     }
-    writeln!(
-        stdout,
-        "recast: {} file(s) would change, {} match(es) across {} scanned.",
-        files_changed.len(),
-        total_matches,
-        files.len()
-    )?;
+
+    emit_diff(cli, &plan).context("emit diff output")?;
     Ok(EXIT_OK)
 }
 
@@ -477,23 +415,10 @@ fn run_stdin(
         None => rewrite_text(&compiled, &buf),
     };
 
-    if let Some(min) = cli.at_least.or(Some(1))
-        && outcome.matches < min
+    if let Err(e) =
+        check_match_counts(outcome.matches, Some(cli.at_least.unwrap_or(1)), cli.at_most)
     {
-        eprintln!(
-            "recast: match-count guard violated: found {}, required at least {}",
-            outcome.matches, min
-        );
-        return Ok(EXIT_GUARD_VIOLATED);
-    }
-    if let Some(max) = cli.at_most
-        && outcome.matches > max
-    {
-        eprintln!(
-            "recast: match-count guard violated: found {}, allowed at most {}",
-            outcome.matches, max
-        );
-        return Ok(EXIT_GUARD_VIOLATED);
+        return Ok(handle_plan_error(e, cli.json));
     }
 
     io::stdout().lock().write_all(outcome.after.as_bytes()).context("write stdout")?;
