@@ -10,7 +10,7 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 authors = ["recast contributors"]
-version = "0.1.7"
+version = "0.1.8"
 publish = true
 repository = "https://github.com/Stoica-Mihai/recast"
 homepage = "https://stoica-mihai.github.io/recast/"
@@ -48,7 +48,7 @@ predicates = "3"
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
 
-recast-core = { path = "crates/recast-core", version = "=0.1.7", default-features = false }
+recast-core = { path = "crates/recast-core", version = "=0.1.8", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

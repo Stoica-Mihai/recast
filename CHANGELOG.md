@@ -7,6 +7,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.8] — 2026-05-22
+
 Post-`0.1.7` follow-through: residual cleanup-pass items + a CI
 deprecation fix flagged by the 0.1.7 release run, plus a deep
 correctness/durability audit pass over `commit`, `structural`, and
