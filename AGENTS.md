@@ -130,6 +130,7 @@ CI must run `fmt --check`, `clippy -D warnings`, and `test --workspace --all-fea
 - **No bypassing hooks.** Never `--no-verify` without explicit instruction.
 - **No backwards-compat shims pre-1.0.** Break freely until a 1.0 release exists.
 - **TDD by default.** Every feature, bug fix, or behavioral change goes through the `/tdd:tdd` skill: write the failing test first, watch it fail, then write the minimum implementation that makes it pass. No production code without a red test first. Scaffolding, doc tweaks, and pure refactors of already-tested code are exempt.
+- **DRY enforced.** Every feature, bug fix, refactor, or test edit runs through the `/engineering-principles:dry-principle` skill. Before writing new code, search for an existing helper, type, or pattern that already solves the sub-problem; lift it into a shared spot if it's now used in two places. Mechanical copy-paste between modules is a reject.
 - **Verify before claiming done.** Run the relevant tests. Re-read the diff. Report results, not intentions.
 - **Commit immediately after each landed feature.** Once `fmt --check` / `clippy -D warnings` / `test --workspace` pass on a scoped change, create the commit without waiting for further approval. Do not batch multiple features into one approval gate. Pushing remains opt-in.
 - **Update `PLAN.md` when deviating.** The plan is living. Drift without a doc update is a bug.
