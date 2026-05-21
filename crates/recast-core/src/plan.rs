@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
+use tracing::{debug, trace};
 
 use crate::error::{Error, Result};
 use crate::pattern::{CompiledPattern, PatternOptions};
@@ -96,7 +97,9 @@ pub fn plan_rewrite<P: AsRef<Path>>(
     opts: &PlanOptions,
 ) -> Result<Plan> {
     let compiled = CompiledPattern::compile(pattern, replacement, &opts.pattern_options)?;
+    debug!(pattern, "compiled regex");
     let files = walk_paths(roots, &opts.walk_options)?;
+    debug!(files_scanned = files.len(), "walk completed");
     if files.len() > opts.max_files {
         return Err(Error::TooManyFiles { count: files.len(), limit: opts.max_files });
     }
@@ -113,8 +116,10 @@ pub fn plan_rewrite<P: AsRef<Path>>(
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     let total_matches: usize = changes.iter().map(|c| c.matches).sum();
+    debug!(files_changed = changes.len(), total_matches, "rewrite plan ready");
 
     if total_matches == 0 && compiled.is_convergent() {
+        debug!("already applied (zero matches, convergent pattern)");
         return Ok(Plan {
             changes: Vec::new(),
             total_matches: 0,
@@ -161,6 +166,7 @@ fn process_one(
     if !outcome.changed() {
         return Ok(None);
     }
+    trace!(path = %path.display(), matches = outcome.matches, "file would change");
 
     if !opts.allow_non_convergent {
         let second = rewrite_text(pattern, &outcome.after);

@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use rustix::fs::fsync;
+use tracing::{debug, trace};
 
 use crate::error::{Error, Result};
 use crate::plan::{FileChange, Plan};
@@ -47,13 +48,17 @@ where
     F: Fn(usize) -> Result<()>,
 {
     if plan.changes.is_empty() {
+        debug!("apply: no changes; nothing to do");
         return Ok(ApplyOutcome { files_written: 0, total_matches: plan.total_matches });
     }
 
+    debug!(files = plan.changes.len(), "apply: stage phase begin");
     let staged = stage_all(&plan.changes)?;
+    debug!(files = staged.len(), "apply: stage phase complete");
 
     match commit_all(&staged, &between_commits) {
         Ok(committed) => {
+            debug!(files = committed.len(), "apply: commit phase complete");
             best_effort_cleanup_backups(&committed);
             best_effort_fsync_parents(&committed);
             Ok(ApplyOutcome {
@@ -62,6 +67,11 @@ where
             })
         }
         Err(CommitFailure { committed, remaining_staged, error }) => {
+            debug!(
+                committed = committed.len(),
+                remaining = remaining_staged,
+                "apply: commit failed, rolling back"
+            );
             rollback_committed(&committed);
             cleanup_remaining_staged(&staged, remaining_staged);
             Err(error)
@@ -147,6 +157,7 @@ where
 }
 
 fn commit_one(staged: &Staged) -> Result<Committed> {
+    trace!(target = %staged.target.display(), "commit: rename");
     let backup_name = sibling_temp_name(&staged.target, "bak");
     let backup_path = staged
         .target
