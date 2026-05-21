@@ -88,9 +88,10 @@ impl CompiledPattern {
                     continue;
                 }
                 if next == b'{'
-                    && let Some(end) = self.replacement[i + 2..].find('}')
+                    && let Some((_, _, after)) =
+                        crate::template_scan::scan_braced_name(&self.replacement, i)
                 {
-                    i += 2 + end + 1;
+                    i = after;
                     continue;
                 }
             }

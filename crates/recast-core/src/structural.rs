@@ -232,6 +232,8 @@ impl CompiledStructural {
 }
 
 fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<TemplatePart>> {
+    use crate::template_scan::{scan_braced_name, scan_meta_name};
+
     let mut parts: Vec<TemplatePart> = Vec::new();
     let mut literal = String::new();
     let bytes = template.as_bytes();
@@ -246,30 +248,19 @@ fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<Template
                 continue;
             }
             if next == b'{' {
-                let close = template[i + 2..].find('}').ok_or_else(|| {
-                    Error::StructuralTemplate("unterminated `${...}` in template".into())
-                })?;
-                let name = &template[i + 2..i + 2 + close];
-                let cap_idx = capture_names.iter().position(|n| *n == name).ok_or_else(|| {
-                    Error::StructuralTemplate(format!("no capture named `${{{name}}}` in query"))
-                })?;
-                flush_literal(&mut literal, &mut parts);
-                parts.push(TemplatePart::Capture { index: cap_idx, name: name.to_owned() });
-                i += 2 + close + 1;
+                let (name_start, name_end, after) =
+                    scan_braced_name(template, i).ok_or_else(|| {
+                        Error::StructuralTemplate("unterminated `${...}` in template".into())
+                    })?;
+                let name = &template[name_start..name_end];
+                push_capture(&mut parts, &mut literal, capture_names, name, true)?;
+                i = after;
                 continue;
             }
-            if next.is_ascii_alphabetic() || next == b'_' {
-                let mut j = i + 1;
-                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                    j += 1;
-                }
-                let name = &template[i + 1..j];
-                let cap_idx = capture_names.iter().position(|n| *n == name).ok_or_else(|| {
-                    Error::StructuralTemplate(format!("no capture named `${name}` in query"))
-                })?;
-                flush_literal(&mut literal, &mut parts);
-                parts.push(TemplatePart::Capture { index: cap_idx, name: name.to_owned() });
-                i = j;
+            if let Some((name_start, name_end, after)) = scan_meta_name(bytes, i) {
+                let name = &template[name_start..name_end];
+                push_capture(&mut parts, &mut literal, capture_names, name, false)?;
+                i = after;
                 continue;
             }
         }
@@ -278,6 +269,25 @@ fn parse_template(template: &str, capture_names: &[&str]) -> Result<Vec<Template
     }
     flush_literal(&mut literal, &mut parts);
     Ok(parts)
+}
+
+fn push_capture(
+    parts: &mut Vec<TemplatePart>,
+    literal: &mut String,
+    capture_names: &[&str],
+    name: &str,
+    braced: bool,
+) -> Result<()> {
+    let cap_idx = capture_names.iter().position(|n| *n == name).ok_or_else(|| {
+        if braced {
+            Error::StructuralTemplate(format!("no capture named `${{{name}}}` in query"))
+        } else {
+            Error::StructuralTemplate(format!("no capture named `${name}` in query"))
+        }
+    })?;
+    flush_literal(literal, parts);
+    parts.push(TemplatePart::Capture { index: cap_idx, name: name.to_owned() });
+    Ok(())
 }
 
 fn flush_literal(literal: &mut String, parts: &mut Vec<TemplatePart>) {
@@ -456,43 +466,29 @@ pub fn compile_friendly_query(lang: Language, pattern: &str) -> Result<String> {
 }
 
 fn substitute_metavars(pattern: &str) -> String {
+    use crate::template_scan::{scan_ellipsis_name, scan_meta_name};
+
     let mut out = String::with_capacity(pattern.len());
     let bytes = pattern.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
-        // $$$NAME — ellipsis metavar (variable-shape subtree)
-        if b == b'$'
-            && i + 3 < bytes.len()
-            && bytes[i + 1] == b'$'
-            && bytes[i + 2] == b'$'
-            && (bytes[i + 3].is_ascii_alphabetic() || bytes[i + 3] == b'_')
-        {
-            let mut j = i + 3;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                j += 1;
+        if b == b'$' {
+            // $$$NAME — ellipsis metavar (variable-shape subtree)
+            if let Some((name_start, name_end, after)) = scan_ellipsis_name(bytes, i) {
+                out.push_str(ELLIPSIS_PREFIX);
+                out.push_str(&pattern[name_start..name_end]);
+                out.push_str(METAVAR_SUFFIX);
+                i = after;
+                continue;
             }
-            let name = &pattern[i + 3..j];
-            out.push_str(ELLIPSIS_PREFIX);
-            out.push_str(name);
-            out.push_str(METAVAR_SUFFIX);
-            i = j;
-            continue;
-        }
-        if b == b'$'
-            && i + 1 < bytes.len()
-            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
-        {
-            let mut j = i + 1;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                j += 1;
+            if let Some((name_start, name_end, after)) = scan_meta_name(bytes, i) {
+                out.push_str(METAVAR_PREFIX);
+                out.push_str(&pattern[name_start..name_end]);
+                out.push_str(METAVAR_SUFFIX);
+                i = after;
+                continue;
             }
-            let name = &pattern[i + 1..j];
-            out.push_str(METAVAR_PREFIX);
-            out.push_str(name);
-            out.push_str(METAVAR_SUFFIX);
-            i = j;
-            continue;
         }
         out.push(b as char);
         i += 1;

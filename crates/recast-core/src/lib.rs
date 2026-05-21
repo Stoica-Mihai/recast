@@ -25,6 +25,7 @@ mod script;
     feature = "lang-python",
 ))]
 mod structural;
+mod template_scan;
 mod walker;
 
 pub use commit::{ApplyOutcome, RecoverySummary, apply_changes, recover_sweep};
