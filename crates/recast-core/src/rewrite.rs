@@ -1,3 +1,12 @@
+//! Per-file rewrite engine and unified-diff renderer.
+//!
+//! [`rewrite_text`] runs the compiled regex over a single in-memory
+//! string and produces a [`RewriteOutcome`] with the match count and
+//! the post-image. [`unified_diff`] turns a before/after pair into a
+//! standard unified-diff string via the `similar` crate.
+//! [`label_for_path`] cleans `./`-prefixed paths so diff headers stay
+//! readable when the user passes `.` as the root.
+
 use std::path::{Component, Path, PathBuf};
 
 use similar::TextDiff;

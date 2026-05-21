@@ -1,3 +1,10 @@
+//! File-system enumeration honoring `.gitignore`, `--type`, and `-g`.
+//!
+//! Thin wrapper around the `ignore` crate's `WalkBuilder` with the
+//! ripgrep-equivalent defaults (`.gitignore` respected, hidden files
+//! excluded, symlinks not followed). Globs use the override engine so
+//! `!pattern` works as a per-invocation exclude.
+
 use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;

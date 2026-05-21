@@ -1,3 +1,11 @@
+//! Regex compilation and the convergence (idempotency) check.
+//!
+//! [`CompiledPattern`] wraps a compiled `regex::Regex` plus its
+//! replacement template. [`CompiledPattern::is_convergent`] strips
+//! capture-group placeholders from the replacement and tests whether
+//! the resulting probe string would re-match the pattern; if so, the
+//! rewrite is non-convergent and the planner will reject it.
+
 use regex::{Regex, RegexBuilder};
 
 use crate::error::Result;

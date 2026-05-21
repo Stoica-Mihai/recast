@@ -1,3 +1,12 @@
+//! Two-phase atomic commit for an approved [`Plan`].
+//!
+//! Stage phase writes a sibling temp per file (fsync, preserve mode),
+//! commit phase swaps original → backup and temp → original per file.
+//! Any commit-phase failure walks the rename log in reverse to restore
+//! every already-renamed original from its backup; remaining staged
+//! temps are deleted. On success, backups are removed and parent dirs
+//! are fsynced so the rename batch is durable.
+
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};

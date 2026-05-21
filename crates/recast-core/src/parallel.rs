@@ -1,3 +1,5 @@
+//! Rayon worker-pool construction for the `--threads N` flag.
+
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::error::{Error, Result};

@@ -1,3 +1,11 @@
+//! End-to-end planning: walk → compile → rewrite → guard → check
+//! convergence.
+//!
+//! [`plan_rewrite`] is the single entry point most callers want. It
+//! produces a [`Plan`] describing every file that would change without
+//! touching the filesystem; pass the plan to
+//! [`crate::apply_changes`] to commit.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

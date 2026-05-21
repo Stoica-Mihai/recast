@@ -1,3 +1,9 @@
+//! Typed errors returned by the planner, walker, and commit phases.
+//!
+//! [`Error`] is the single source of truth for failure shapes; the
+//! [`crate::json::ErrorKind`] discriminator (under the `serde` feature)
+//! tags each variant for machine consumption.
+
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
