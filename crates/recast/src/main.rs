@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, anyhow};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Args, Parser};
 use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
@@ -19,36 +19,32 @@ const EXIT_CHECK_WOULD_CHANGE: u8 = 1;
 const EXIT_GUARD_VIOLATED: u8 = 2;
 const EXIT_INTERNAL: u8 = 3;
 
-#[derive(Debug, Parser)]
-#[command(name = "recast", about = "Safe, atomic, transparent multi-file text rewrites.", version)]
-pub(crate) struct Cli {
-    /// Regex pattern. Multi-line by default. Use --literal for plain-string
-    /// matching.
-    #[arg(required_unless_present_any = ["completions", "recover"])]
-    pattern: Option<String>,
-
-    /// Replacement template. $1, $2, ${name} interpolated unless --literal
-    /// is set.
-    #[arg(required_unless_present_any = ["completions", "recover"])]
-    replacement: Option<String>,
-
-    /// Paths or globs to scan. Defaults to the current directory if omitted.
-    /// .gitignore respected by default.
-    #[arg(default_values_t = [".".to_owned()])]
-    paths: Vec<String>,
-
+/// `--diff` / `--json` / `--quiet` / `--verbose`. Anything that
+/// controls *how* we print, not *what* we plan.
+#[derive(Debug, Args)]
+pub(crate) struct OutputOptions {
     /// Show unified diff per file (default when --apply absent).
     #[arg(long, action = ArgAction::SetTrue)]
     diff: bool,
 
-    /// Atomically write the changes.
-    #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["check"])]
-    apply: bool,
+    /// Emit machine-readable JSON summary on stdout.
+    #[arg(long, action = ArgAction::SetTrue)]
+    json: bool,
 
-    /// Exit non-zero if any file would change. No output, no writes.
-    #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["apply"])]
-    check: bool,
+    /// Suppress diff body; print only the summary.
+    #[arg(long, action = ArgAction::SetTrue)]
+    quiet: bool,
 
+    /// Per-file timing and counters.
+    #[arg(short = 'v', long, action = ArgAction::SetTrue)]
+    verbose: bool,
+}
+
+/// `--at-least` / `--at-most` / `--allow-non-convergent` /
+/// `--max-bytes` / `--max-files`. Knobs that shape the planner's
+/// safety bounds.
+#[derive(Debug, Args)]
+pub(crate) struct GuardOptions {
     /// Require at least N matches across all files (default 1). 0 disables
     /// the guard.
     #[arg(long, value_name = "N")]
@@ -69,6 +65,62 @@ pub(crate) struct Cli {
     /// Refuse runs touching more than N files (default 1000).
     #[arg(long, value_name = "N", default_value_t = 1000)]
     max_files: usize,
+}
+
+/// `--lang` / `--query` / `--ast`. Structural-mode dispatch.
+#[derive(Debug, Args)]
+pub(crate) struct StructuralCli {
+    /// Structural mode: tree-sitter language to parse with. Requires
+    /// `--query`. In this mode the positional PATTERN is ignored;
+    /// REPLACEMENT is used as the template (with `$name` / `${name}`
+    /// capture substitutions). Currently supported: `rust`.
+    #[arg(long, value_name = "LANG", requires = "query")]
+    lang: Option<String>,
+
+    /// Tree-sitter S-expression query (structural mode). The capture
+    /// named `@root` (or, absent that, the outermost capture in each
+    /// match) defines the byte range to replace.
+    #[arg(long, value_name = "QUERY", requires = "lang", conflicts_with = "ast_pattern")]
+    query: Option<String>,
+
+    /// Friendly structural pattern written in the target language with
+    /// `$NAME` placeholders (compiled to a tree-sitter query). Use
+    /// either `--query` or `--ast` with `--lang`, not both.
+    #[arg(long = "ast", value_name = "PATTERN", requires = "lang", conflicts_with = "query")]
+    ast_pattern: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "recast", about = "Safe, atomic, transparent multi-file text rewrites.", version)]
+pub(crate) struct Cli {
+    /// Regex pattern. Multi-line by default. Use --literal for plain-string
+    /// matching.
+    #[arg(required_unless_present_any = ["completions", "recover"])]
+    pattern: Option<String>,
+
+    /// Replacement template. $1, $2, ${name} interpolated unless --literal
+    /// is set.
+    #[arg(required_unless_present_any = ["completions", "recover"])]
+    replacement: Option<String>,
+
+    /// Paths or globs to scan. Defaults to the current directory if omitted.
+    /// .gitignore respected by default.
+    #[arg(default_values_t = [".".to_owned()])]
+    paths: Vec<String>,
+
+    #[command(flatten)]
+    output: OutputOptions,
+
+    /// Atomically write the changes.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["check"])]
+    apply: bool,
+
+    /// Exit non-zero if any file would change. No output, no writes.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["apply"])]
+    check: bool,
+
+    #[command(flatten)]
+    guard: GuardOptions,
 
     /// Include hidden files.
     #[arg(long, action = ArgAction::SetTrue)]
@@ -104,18 +156,6 @@ pub(crate) struct Cli {
     #[arg(short = 's', long, action = ArgAction::SetTrue)]
     single_line: bool,
 
-    /// Emit machine-readable JSON summary on stdout.
-    #[arg(long, action = ArgAction::SetTrue)]
-    json: bool,
-
-    /// Suppress diff body; print only the summary.
-    #[arg(long, action = ArgAction::SetTrue)]
-    quiet: bool,
-
-    /// Per-file timing and counters.
-    #[arg(short = 'v', long, action = ArgAction::SetTrue)]
-    verbose: bool,
-
     /// Worker threads (default = num CPUs).
     #[arg(long, value_name = "N")]
     threads: Option<usize>,
@@ -135,24 +175,8 @@ pub(crate) struct Cli {
     #[arg(long, value_name = "PATH")]
     script: Option<PathBuf>,
 
-    /// Structural mode: tree-sitter language to parse with. Requires
-    /// `--query`. In this mode the positional PATTERN is ignored;
-    /// REPLACEMENT is used as the template (with `$name` / `${name}`
-    /// capture substitutions). Currently supported: `rust`.
-    #[arg(long, value_name = "LANG", requires = "query")]
-    lang: Option<String>,
-
-    /// Tree-sitter S-expression query (structural mode). The capture
-    /// named `@root` (or, absent that, the outermost capture in each
-    /// match) defines the byte range to replace.
-    #[arg(long, value_name = "QUERY", requires = "lang", conflicts_with = "ast_pattern")]
-    query: Option<String>,
-
-    /// Friendly structural pattern written in the target language with
-    /// `$NAME` placeholders (compiled to a tree-sitter query). Use
-    /// either `--query` or `--ast` with `--lang`, not both.
-    #[arg(long = "ast", value_name = "PATTERN", requires = "lang", conflicts_with = "query")]
-    ast_pattern: Option<String>,
+    #[command(flatten)]
+    structural: StructuralCli,
 
     /// Scan PATHS for leftover `.recast.bak.*` / `.recast.tmp.*`
     /// siblings from a previous interrupted --apply and reconcile them
@@ -196,17 +220,17 @@ impl Cli {
                 globs: self.glob.clone(),
             },
             at_least: self.min_matches(),
-            at_most: self.at_most,
-            allow_non_convergent: self.allow_non_convergent,
-            max_bytes: self.max_bytes,
-            max_files: self.max_files,
+            at_most: self.guard.at_most,
+            allow_non_convergent: self.guard.allow_non_convergent,
+            max_bytes: self.guard.max_bytes,
+            max_files: self.guard.max_files,
         }
     }
 
     /// `--at-least` value with the implicit default of 1 applied so the
     /// guard always fires unless the user explicitly passes `0`.
     fn min_matches(&self) -> Option<usize> {
-        Some(self.at_least.unwrap_or(1))
+        Some(self.guard.at_least.unwrap_or(1))
     }
 
     fn paths_as_pathbufs(&self) -> Vec<PathBuf> {
@@ -269,7 +293,7 @@ fn run(cli: Cli) -> Result<u8> {
 
     let _lock_guard = match acquire_workspace_lock_for(&cli) {
         Ok(g) => g,
-        Err(err) => return handle_plan_error(err, cli.json),
+        Err(err) => return handle_plan_error(err, cli.output.json),
     };
 
     if cli.recover {
@@ -282,15 +306,15 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    if let Some(lang_name) = &cli.lang {
+    if let Some(lang_name) = &cli.structural.lang {
         let template = cli
             .replacement
             .as_deref()
             .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
         let lang = resolve_lang(lang_name)?;
-        let query: String = if let Some(q) = cli.query.as_deref() {
+        let query: String = if let Some(q) = cli.structural.query.as_deref() {
             q.to_owned()
-        } else if let Some(pat) = cli.ast_pattern.as_deref() {
+        } else if let Some(pat) = cli.structural.ast_pattern.as_deref() {
             recast_core::compile_friendly_query(lang, pat).map_err(anyhow::Error::from)?
         } else {
             return Err(anyhow!("--query or --ast required with --lang"));
@@ -322,7 +346,7 @@ fn run(cli: Cli) -> Result<u8> {
     };
     let plan = match result {
         Ok(plan) => plan,
-        Err(err) => return handle_plan_error(err, cli.json),
+        Err(err) => return handle_plan_error(err, cli.output.json),
     };
 
     dispatch_plan(&cli, &plan)
@@ -336,7 +360,7 @@ fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {
     if cli.apply {
         emit_apply(cli, plan).context("emit apply output")?;
         let outcome = apply_changes(plan).context("apply changes")?;
-        if cli.json {
+        if cli.output.json {
             println!("{}", json::from_apply(plan, &outcome).to_line()?);
         }
         return Ok(EXIT_OK);
@@ -344,7 +368,7 @@ fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {
 
     if cli.check {
         let would_change = plan.changes.len();
-        if cli.json {
+        if cli.output.json {
             println!("{}", json::from_check(plan).to_line()?);
         }
         if matches!(plan.outcome, PlanOutcome::AlreadyApplied) || would_change == 0 {
@@ -363,10 +387,10 @@ fn run_structural(cli: &Cli, lang: Language, query: &str, template: &str) -> Res
         io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
         let outcome = match structural_rewrite(lang, &buf, query, template) {
             Ok(o) => o,
-            Err(e) => return handle_plan_error(e, cli.json),
+            Err(e) => return handle_plan_error(e, cli.output.json),
         };
-        if let Err(e) = check_match_counts(outcome.matches, cli.min_matches(), cli.at_most) {
-            return handle_plan_error(e, cli.json);
+        if let Err(e) = check_match_counts(outcome.matches, cli.min_matches(), cli.guard.at_most) {
+            return handle_plan_error(e, cli.output.json);
         }
         io::stdout().lock().write_all(outcome.text.as_bytes()).context("write stdout")?;
         return Ok(EXIT_OK);
@@ -376,7 +400,7 @@ fn run_structural(cli: &Cli, lang: Language, query: &str, template: &str) -> Res
     let opts = cli.plan_options();
     let plan = match plan_structural_rewrite(lang, query, template, &paths, &opts) {
         Ok(p) => p,
-        Err(e) => return handle_plan_error(e, cli.json),
+        Err(e) => return handle_plan_error(e, cli.output.json),
     };
 
     dispatch_plan(cli, &plan)
@@ -398,8 +422,8 @@ fn run_stdin(
         None => rewrite_text(&compiled, &buf),
     };
 
-    if let Err(e) = check_match_counts(outcome.matches, cli.min_matches(), cli.at_most) {
-        return handle_plan_error(e, cli.json);
+    if let Err(e) = check_match_counts(outcome.matches, cli.min_matches(), cli.guard.at_most) {
+        return handle_plan_error(e, cli.output.json);
     }
 
     io::stdout().lock().write_all(outcome.after.as_bytes()).context("write stdout")?;
@@ -407,7 +431,7 @@ fn run_stdin(
 }
 
 fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
-    if cli.json {
+    if cli.output.json {
         println!("{}", json::from_plan(plan).to_line()?);
         return Ok(());
     }
@@ -417,7 +441,7 @@ fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
         writeln!(stdout, "recast: already applied; no changes needed.")?;
         return Ok(());
     }
-    if !cli.quiet {
+    if !cli.output.quiet {
         for change in &plan.changes {
             stdout.write_all(change.diff.as_bytes())?;
         }
@@ -433,7 +457,7 @@ fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
 }
 
 fn emit_apply(cli: &Cli, plan: &Plan) -> Result<()> {
-    if cli.json {
+    if cli.output.json {
         return Ok(());
     }
     let mut stderr = io::stderr().lock();
@@ -441,7 +465,7 @@ fn emit_apply(cli: &Cli, plan: &Plan) -> Result<()> {
         writeln!(stderr, "recast: already applied; no changes needed.")?;
         return Ok(());
     }
-    if cli.verbose {
+    if cli.output.verbose {
         for change in &plan.changes {
             writeln!(
                 stderr,
