@@ -1,7 +1,6 @@
 [book]
 authors = ["recast contributors"]
 language = "en"
-multilingual = false
 src = "src"
 title = "recast"
 description = "CLI for safe, atomic, transparent multi-file text rewrites."
