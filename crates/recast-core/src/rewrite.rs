@@ -11,7 +11,11 @@ use std::path::{Component, Path, PathBuf};
 
 use similar::TextDiff;
 
+#[cfg(feature = "script")]
+use crate::error::Result;
 use crate::pattern::CompiledPattern;
+#[cfg(feature = "script")]
+use crate::script::ScriptRewriter;
 
 /// One file's pre-image, post-image, and match count.
 #[derive(Debug, Clone)]
@@ -34,6 +38,42 @@ pub fn rewrite_text(pattern: &CompiledPattern, before: &str) -> RewriteOutcome {
     let matches = pattern.regex().find_iter(before).count();
     let after = pattern.regex().replace_all(before, pattern.replacement()).into_owned();
     RewriteOutcome { before: before.to_owned(), after, matches }
+}
+
+/// Apply `pattern` to `before`, calling `script` once per match. The
+/// script's return value replaces each occurrence. Script errors abort
+/// the whole rewrite.
+#[cfg(feature = "script")]
+pub fn rewrite_text_scripted(
+    pattern: &CompiledPattern,
+    script: &ScriptRewriter,
+    before: &str,
+) -> Result<RewriteOutcome> {
+    use std::cell::RefCell;
+
+    let regex = pattern.regex();
+    let matches = regex.find_iter(before).count();
+    let err_slot: RefCell<Option<crate::error::Error>> = RefCell::new(None);
+
+    let after = regex.replace_all(before, |caps: &regex::Captures<'_>| {
+        if err_slot.borrow().is_some() {
+            return String::new();
+        }
+        let caps_vec: Vec<&str> =
+            caps.iter().map(|m| m.map(|m| m.as_str()).unwrap_or("")).collect();
+        match script.replace(&caps_vec) {
+            Ok(s) => s,
+            Err(e) => {
+                *err_slot.borrow_mut() = Some(e);
+                String::new()
+            }
+        }
+    });
+
+    if let Some(e) = err_slot.into_inner() {
+        return Err(e);
+    }
+    Ok(RewriteOutcome { before: before.to_owned(), after: after.into_owned(), matches })
 }
 
 /// Drop leading `./` (and repeats thereof) from a path so unified-diff

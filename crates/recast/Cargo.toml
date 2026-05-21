@@ -13,7 +13,7 @@ name = "recast"
 path = "src/main.rs"
 
 [dependencies]
-recast-core = { workspace = true, features = ["serde"] }
+recast-core = { workspace = true, features = ["serde", "script"] }
 anyhow.workspace = true
 clap.workspace = true
 clap_complete.workspace = true

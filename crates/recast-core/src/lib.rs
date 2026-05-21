@@ -21,7 +21,11 @@ pub use commit::{ApplyOutcome, apply_changes};
 pub use error::{Error, Result};
 pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};
+#[cfg(feature = "script")]
+pub use plan::plan_rewrite_scripted;
 pub use plan::{FileChange, Plan, PlanOptions, PlanOutcome, plan_rewrite};
+#[cfg(feature = "script")]
+pub use rewrite::rewrite_text_scripted;
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
 #[cfg(feature = "script")]
 pub use script::ScriptRewriter;

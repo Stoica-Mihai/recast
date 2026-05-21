@@ -160,6 +160,38 @@ fn stdin_mode_zero_matches_with_at_least_zero() {
 }
 
 #[test]
+fn script_mode_apply_uppercases_via_rhai() {
+    let dir = fixture(&[("a.txt", "foo bar baz\n")]);
+    let script = dir.path().join("uc.rhai");
+    fs::write(&script, "captures[1].to_upper()").unwrap();
+    recast()
+        .arg("--script")
+        .arg(&script)
+        .arg("--apply")
+        .arg(r"\b(\w+)\b")
+        .arg("")
+        .arg(dir.path().join("a.txt"))
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "FOO BAR BAZ\n");
+}
+
+#[test]
+fn script_mode_stdin_increments_number() {
+    let dir = fixture(&[("bump.rhai", "(parse_int(whole) + 1).to_string()")]);
+    recast()
+        .arg("--stdin")
+        .arg("--script")
+        .arg(dir.path().join("bump.rhai"))
+        .arg(r"\d+")
+        .arg("")
+        .write_stdin("version 3\n")
+        .assert()
+        .success()
+        .stdout("version 4\n");
+}
+
+#[test]
 fn completions_flag_outputs_shell_script() {
     recast()
         .arg("--completions")

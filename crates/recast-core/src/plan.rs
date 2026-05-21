@@ -14,7 +14,11 @@ use tracing::{debug, trace};
 
 use crate::error::{Error, Result};
 use crate::pattern::{CompiledPattern, PatternOptions};
-use crate::rewrite::{label_for_path, rewrite_text, unified_diff};
+#[cfg(feature = "script")]
+use crate::rewrite::rewrite_text_scripted;
+use crate::rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
+#[cfg(feature = "script")]
+use crate::script::ScriptRewriter;
 use crate::walker::{WalkOptions, walk_paths};
 
 /// Knobs controlling a single [`plan_rewrite`] invocation.
@@ -106,16 +110,56 @@ pub fn plan_rewrite<P: AsRef<Path>>(
 ) -> Result<Plan> {
     let compiled = CompiledPattern::compile(pattern, replacement, &opts.pattern_options)?;
     debug!(pattern, "compiled regex");
+    let files = scan(roots, opts)?;
+    let files_scanned = files.len();
+
+    let results: Vec<Result<Option<FileChange>>> = files
+        .par_iter()
+        .map(|path| process_one(&compiled, path, opts, |p, s| Ok(rewrite_text(p, s))))
+        .collect();
+    let changes = collect_changes(results)?;
+    finalize_plan(changes, compiled.is_convergent(), files_scanned, opts)
+}
+
+/// Like [`plan_rewrite`] but each match drives a Rhai script callback
+/// instead of a static template. The pattern's `replacement` field is
+/// ignored. Runs sequentially because the rhai engine isn't `Sync` by
+/// default — typically fine since scripted rewrites are a small share
+/// of files in practice.
+#[cfg(feature = "script")]
+pub fn plan_rewrite_scripted<P: AsRef<Path>>(
+    pattern: &str,
+    script: &ScriptRewriter,
+    roots: &[P],
+    opts: &PlanOptions,
+) -> Result<Plan> {
+    let compiled = CompiledPattern::compile(pattern, "", &opts.pattern_options)?;
+    debug!(pattern, "compiled regex (scripted)");
+    let files = scan(roots, opts)?;
+    let files_scanned = files.len();
+
+    let mut results: Vec<Result<Option<FileChange>>> = Vec::with_capacity(files_scanned);
+    for path in &files {
+        results
+            .push(process_one(&compiled, path, opts, |p, s| rewrite_text_scripted(p, script, s)));
+    }
+    let changes = collect_changes(results)?;
+    // Scripts can't be probed statically; trust the per-file dynamic
+    // convergence check inside process_one and treat zero matches as
+    // an already-applied no-op.
+    finalize_plan(changes, true, files_scanned, opts)
+}
+
+fn scan<P: AsRef<Path>>(roots: &[P], opts: &PlanOptions) -> Result<Vec<PathBuf>> {
     let files = walk_paths(roots, &opts.walk_options)?;
     debug!(files_scanned = files.len(), "walk completed");
     if files.len() > opts.max_files {
         return Err(Error::TooManyFiles { count: files.len(), limit: opts.max_files });
     }
-    let files_scanned = files.len();
+    Ok(files)
+}
 
-    let results: Vec<Result<Option<FileChange>>> =
-        files.par_iter().map(|path| process_one(&compiled, path, opts)).collect();
-
+fn collect_changes(results: Vec<Result<Option<FileChange>>>) -> Result<Vec<FileChange>> {
     let mut changes = Vec::new();
     for r in results {
         if let Some(change) = r? {
@@ -123,11 +167,20 @@ pub fn plan_rewrite<P: AsRef<Path>>(
         }
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(changes)
+}
+
+fn finalize_plan(
+    changes: Vec<FileChange>,
+    convergent_or_scripted: bool,
+    files_scanned: usize,
+    opts: &PlanOptions,
+) -> Result<Plan> {
     let total_matches: usize = changes.iter().map(|c| c.matches).sum();
     debug!(files_changed = changes.len(), total_matches, "rewrite plan ready");
 
-    if total_matches == 0 && compiled.is_convergent() {
-        debug!("already applied (zero matches, convergent pattern)");
+    if total_matches == 0 && convergent_or_scripted {
+        debug!("already applied (zero matches)");
         return Ok(Plan {
             changes: Vec::new(),
             total_matches: 0,
@@ -150,11 +203,15 @@ pub fn plan_rewrite<P: AsRef<Path>>(
     Ok(Plan { changes, total_matches, files_scanned, outcome: PlanOutcome::Changes })
 }
 
-fn process_one(
+fn process_one<F>(
     pattern: &CompiledPattern,
     path: &Path,
     opts: &PlanOptions,
-) -> Result<Option<FileChange>> {
+    rewrite: F,
+) -> Result<Option<FileChange>>
+where
+    F: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
+{
     let metadata =
         fs::metadata(path).map_err(|e| Error::Io { path: path.to_path_buf(), source: e })?;
     if metadata.len() > opts.max_bytes {
@@ -170,14 +227,14 @@ fn process_one(
         Err(e) => return Err(Error::Io { path: path.to_path_buf(), source: e }),
     };
 
-    let outcome = rewrite_text(pattern, &before);
+    let outcome = rewrite(pattern, &before)?;
     if !outcome.changed() {
         return Ok(None);
     }
     trace!(path = %path.display(), matches = outcome.matches, "file would change");
 
     if !opts.allow_non_convergent {
-        let second = rewrite_text(pattern, &outcome.after);
+        let second = rewrite(pattern, &outcome.after)?;
         if second.changed() {
             return Err(Error::NonConvergent { path: path.to_path_buf(), extra: second.matches });
         }

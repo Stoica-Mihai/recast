@@ -9,7 +9,8 @@ use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome,
-    WalkOptions, apply_changes, build_pool, json, plan_rewrite, rewrite_text,
+    ScriptRewriter, WalkOptions, apply_changes, build_pool, json, plan_rewrite,
+    plan_rewrite_scripted, rewrite_text, rewrite_text_scripted,
 };
 
 const EXIT_OK: u8 = 0;
@@ -124,6 +125,15 @@ pub(crate) struct Cli {
     #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["apply", "check", "json"])]
     stdin: bool,
 
+    /// Rhai script file run per regex match; its return value becomes
+    /// the replacement. The positional REPLACEMENT argument is still
+    /// required (pass any placeholder, e.g. `""`) but its value is
+    /// ignored when `--script` is set. Script sees `captures`
+    /// (array; index 0 is the full match) and `whole` (full-match
+    /// alias — `match` is a Rhai reserved keyword).
+    #[arg(long, value_name = "PATH")]
+    script: Option<PathBuf>,
+
     /// Generate a shell completion script and exit.
     #[arg(long, value_name = "SHELL", value_enum)]
     completions: Option<Shell>,
@@ -189,15 +199,26 @@ fn run(cli: Cli) -> Result<u8> {
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
     let replacement = cli.replacement.as_deref().ok_or_else(|| anyhow!("replacement required"))?;
 
+    let script = match &cli.script {
+        Some(path) => Some(ScriptRewriter::from_file(path).map_err(anyhow::Error::from)?),
+        None => None,
+    };
+
     if cli.stdin {
-        return run_stdin(&cli, pattern, replacement);
+        return run_stdin(&cli, pattern, replacement, script.as_ref());
     }
 
     let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
     let opts = cli.plan_options();
-    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
 
-    let plan = match pool.install(|| plan_rewrite(pattern, replacement, &paths, &opts)) {
+    let result = match &script {
+        Some(s) => plan_rewrite_scripted(pattern, s, &paths, &opts),
+        None => {
+            let pool = build_pool(cli.threads).context("configure worker thread pool")?;
+            pool.install(|| plan_rewrite(pattern, replacement, &paths, &opts))
+        }
+    };
+    let plan = match result {
         Ok(plan) => plan,
         Err(err) => return Ok(handle_plan_error(err, cli.json)),
     };
@@ -226,13 +247,21 @@ fn run(cli: Cli) -> Result<u8> {
     Ok(EXIT_OK)
 }
 
-fn run_stdin(cli: &Cli, pattern: &str, replacement: &str) -> Result<u8> {
+fn run_stdin(
+    cli: &Cli,
+    pattern: &str,
+    replacement: &str,
+    script: Option<&ScriptRewriter>,
+) -> Result<u8> {
     let compiled = CompiledPattern::compile(pattern, replacement, &cli.pattern_options())
         .context("compile pattern")?;
 
     let mut buf = String::new();
     io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
-    let outcome = rewrite_text(&compiled, &buf);
+    let outcome = match script {
+        Some(s) => rewrite_text_scripted(&compiled, s, &buf).map_err(anyhow::Error::from)?,
+        None => rewrite_text(&compiled, &buf),
+    };
 
     if let Some(min) = cli.at_least.or(Some(1))
         && outcome.matches < min
