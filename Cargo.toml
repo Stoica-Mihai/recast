@@ -10,7 +10,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 authors = ["recast contributors"]
-version = "0.1.0"
+version = "0.1.1"
 publish = false
 
 [workspace.dependencies]
@@ -36,7 +36,7 @@ insta = "1"
 assert_cmd = "2"
 predicates = "3"
 
-recast-core = { path = "crates/recast-core", version = "=0.1.0" }
+recast-core = { path = "crates/recast-core", version = "=0.1.1" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

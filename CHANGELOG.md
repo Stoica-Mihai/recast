@@ -5,6 +5,26 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
+## [0.1.1] — 2026-05-21
+
+Re-tag of 0.1.0 to ship pre-built binaries via the new release
+workflow. No source-level feature changes vs 0.1.0.
+
+### Fixed
+
+- `cargo deny` no longer flags `recast-core` as a wildcard
+  dependency (explicit `version = "=0.1.x"` pin on the workspace
+  path dep).
+
+### CI
+
+- New `.github/workflows/release.yml` builds `recast` for
+  `x86_64-unknown-linux-gnu`, `x86_64/aarch64-apple-darwin`, and
+  `x86_64-pc-windows-msvc`, packages binary + README + LICENSE +
+  CHANGELOG into a `.tar.gz` (or `.zip` on Windows) per target with
+  a `.sha256` sidecar, and attaches everything to the matching
+  GitHub Release.
+
 ## [0.1.0] — 2026-05-21
 
 First tagged alpha. Charter from `PLAN.md` (phases 0–6) delivered;
