@@ -15,7 +15,9 @@ Every report carries a `kind` discriminator:
 kind ∈ "plan" | "apply" | "check" | "error"
 ```
 
-Non-error reports share `outcome`, `files_scanned`, and `total_matches`.
+Non-error reports share `outcome`, `files_scanned`, and `total_matches`
+as a header that appears in that order; the mode-specific count
+(`files_changed` / `files_written` / `files_would_change`) follows.
 
 ## `plan` (default mode)
 
@@ -24,8 +26,8 @@ Non-error reports share `outcome`, `files_scanned`, and `total_matches`.
   "kind": "plan",
   "outcome": "changes" | "already_applied",
   "files_scanned": 5,
-  "files_changed": 2,
   "total_matches": 3,
+  "files_changed": 2,
   "changes": [
     { "path": "src/a.rs", "matches": 2 },
     { "path": "src/b.rs", "matches": 1 }
@@ -40,8 +42,8 @@ Non-error reports share `outcome`, `files_scanned`, and `total_matches`.
   "kind": "apply",
   "outcome": "changes" | "already_applied",
   "files_scanned": 5,
-  "files_written": 2,
-  "total_matches": 3
+  "total_matches": 3,
+  "files_written": 2
 }
 ```
 
@@ -52,8 +54,8 @@ Non-error reports share `outcome`, `files_scanned`, and `total_matches`.
   "kind": "check",
   "outcome": "changes" | "already_applied",
   "files_scanned": 5,
-  "files_would_change": 2,
-  "total_matches": 3
+  "total_matches": 3,
+  "files_would_change": 2
 }
 ```
 
@@ -78,7 +80,9 @@ Non-error reports share `outcome`, `files_scanned`, and `total_matches`.
     | "structural_query"
     | "structural_template"
     | "structural_parse"
-    | "locked",
+    | "locked"
+    | "invalid_threads"
+    | "thread_pool",
   "message": "human-readable description",
   "exit_code": 2 | 3
 }
