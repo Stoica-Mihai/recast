@@ -408,30 +408,34 @@ fn sibling_temp_name(target: &Path, kind: SiblingKind, nonces: &NonceGen) -> Str
 }
 
 /// Per-apply nonce generator for `.recast.{kind}.{nonce}` sibling
-/// filenames. Mixes the current epoch nanoseconds with a monotonically-
-/// incremented counter so siblings from concurrent stage workers don't
-/// collide and a single apply can produce thousands of unique names.
+/// filenames. Samples epoch nanoseconds once at construction and mixes
+/// the constant with a monotonically-incremented counter so siblings
+/// from concurrent stage workers don't collide and a single apply can
+/// produce thousands of unique names without re-entering the kernel
+/// per file.
 ///
 /// One instance per [`apply_changes`] / [`recover_sweep`] (writer) call
 /// — passed by reference into the stage + commit phases so the counter
 /// is scoped to the apply that owns it instead of living in static
 /// mutable state.
 struct NonceGen {
+    seed: u64,
     counter: std::sync::atomic::AtomicU64,
 }
 
 impl NonceGen {
     fn new() -> Self {
-        Self { counter: std::sync::atomic::AtomicU64::new(0) }
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts =
+            SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
+        let seed = ts.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        Self { seed, counter: std::sync::atomic::AtomicU64::new(0) }
     }
 
     fn next(&self) -> u64 {
         use std::sync::atomic::Ordering;
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let ts =
-            SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
         let n = self.counter.fetch_add(1, Ordering::Relaxed);
-        ts.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(n)
+        self.seed.wrapping_add(n)
     }
 }
 
