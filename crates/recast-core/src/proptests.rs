@@ -39,7 +39,9 @@ proptest! {
         let opts = PatternOptions { literal: true, ..Default::default() };
         if let Ok(compiled) = CompiledPattern::compile(&pattern, &replacement, &opts) {
             let outcome = rewrite_text(&compiled, &input);
-            prop_assert_eq!(outcome.before, input);
+            if outcome.matches == 0 {
+                prop_assert_eq!(outcome.after, input);
+            }
         }
     }
 

@@ -285,8 +285,7 @@ fn run(cli: Cli) -> Result<u8> {
             .replacement
             .as_deref()
             .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
-        let lang = Language::from_name(lang_name)
-            .ok_or_else(|| anyhow!("unknown language `{lang_name}`"))?;
+        let lang = resolve_lang(lang_name)?;
         let query: String = if let Some(q) = cli.query.as_deref() {
             q.to_owned()
         } else if let Some(pat) = cli.ast_pattern.as_deref() {
@@ -294,7 +293,7 @@ fn run(cli: Cli) -> Result<u8> {
         } else {
             return Err(anyhow!("--query or --ast required with --lang"));
         };
-        return run_structural(&cli, lang_name, &query, template);
+        return run_structural(&cli, lang, &query, template);
     }
 
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
@@ -324,11 +323,19 @@ fn run(cli: Cli) -> Result<u8> {
         Err(err) => return Ok(handle_plan_error(err, cli.json)),
     };
 
+    dispatch_plan(&cli, &plan)
+}
+
+fn resolve_lang(name: &str) -> Result<Language> {
+    Language::from_name(name).ok_or_else(|| anyhow!("unknown language `{name}`"))
+}
+
+fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {
     if cli.apply {
-        emit_apply(&cli, &plan).context("emit apply output")?;
-        let outcome = apply_changes(&plan).context("apply changes")?;
+        emit_apply(cli, plan).context("emit apply output")?;
+        let outcome = apply_changes(plan).context("apply changes")?;
         if cli.json {
-            println!("{}", json::from_apply(&plan, &outcome).to_line()?);
+            println!("{}", json::from_apply(plan, &outcome).to_line()?);
         }
         return Ok(EXIT_OK);
     }
@@ -336,7 +343,7 @@ fn run(cli: Cli) -> Result<u8> {
     if cli.check {
         let would_change = plan.changes.len();
         if cli.json {
-            println!("{}", json::from_check(&plan).to_line()?);
+            println!("{}", json::from_check(plan).to_line()?);
         }
         if matches!(plan.outcome, PlanOutcome::AlreadyApplied) || would_change == 0 {
             return Ok(EXIT_OK);
@@ -344,14 +351,11 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_CHECK_WOULD_CHANGE);
     }
 
-    emit_diff(&cli, &plan).context("emit diff output")?;
+    emit_diff(cli, plan).context("emit diff output")?;
     Ok(EXIT_OK)
 }
 
-fn run_structural(cli: &Cli, lang_name: &str, query: &str, template: &str) -> Result<u8> {
-    let lang =
-        Language::from_name(lang_name).ok_or_else(|| anyhow!("unknown language `{lang_name}`"))?;
-
+fn run_structural(cli: &Cli, lang: Language, query: &str, template: &str) -> Result<u8> {
     if cli.stdin {
         let mut buf = String::new();
         io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
@@ -375,28 +379,7 @@ fn run_structural(cli: &Cli, lang_name: &str, query: &str, template: &str) -> Re
         Err(e) => return Ok(handle_plan_error(e, cli.json)),
     };
 
-    if cli.apply {
-        emit_apply(cli, &plan).context("emit apply output")?;
-        let outcome = apply_changes(&plan).context("apply changes")?;
-        if cli.json {
-            println!("{}", json::from_apply(&plan, &outcome).to_line()?);
-        }
-        return Ok(EXIT_OK);
-    }
-
-    if cli.check {
-        let would_change = plan.changes.len();
-        if cli.json {
-            println!("{}", json::from_check(&plan).to_line()?);
-        }
-        if matches!(plan.outcome, PlanOutcome::AlreadyApplied) || would_change == 0 {
-            return Ok(EXIT_OK);
-        }
-        return Ok(EXIT_CHECK_WOULD_CHANGE);
-    }
-
-    emit_diff(cli, &plan).context("emit diff output")?;
-    Ok(EXIT_OK)
+    dispatch_plan(cli, &plan)
 }
 
 fn run_stdin(

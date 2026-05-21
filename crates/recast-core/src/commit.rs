@@ -7,6 +7,7 @@
 //! temps are deleted. On success, backups are removed and parent dirs
 //! are fsynced so the rename batch is durable.
 
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -199,13 +200,11 @@ fn best_effort_cleanup_backups(committed: &[Committed]) {
 }
 
 fn best_effort_fsync_parents(committed: &[Committed]) {
-    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut seen: HashSet<&Path> = HashSet::new();
     for c in committed {
-        if let Some(parent) = c.target.parent() {
-            if seen.iter().any(|p| p == parent) {
-                continue;
-            }
-            seen.push(parent.to_path_buf());
+        if let Some(parent) = c.target.parent()
+            && seen.insert(parent)
+        {
             // Windows does not allow fsync'ing a directory handle; the
             // per-file sync_all already covers durability on that
             // platform, so this loop is a no-op there.
@@ -251,10 +250,7 @@ pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
     let mut groups: std::collections::HashMap<PathBuf, RecoveryGroup> =
         std::collections::HashMap::new();
     for entry in iter.build() {
-        let entry = entry.map_err(|e| Error::Io {
-            path: PathBuf::new(),
-            source: std::io::Error::other(e.to_string()),
-        })?;
+        let entry = entry.map_err(Error::Walk)?;
         let path = entry.into_path();
         let name = match path.file_name().and_then(|n| n.to_str()) {
             Some(s) => s.to_owned(),

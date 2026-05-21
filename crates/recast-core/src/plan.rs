@@ -115,10 +115,22 @@ pub fn plan_rewrite<P: AsRef<Path>>(
 
     let results: Vec<Result<Option<FileChange>>> = files
         .par_iter()
-        .map(|path| process_one(&compiled, path, opts, |p, s| Ok(rewrite_text(p, s))))
+        .map(|path| {
+            process_one(
+                &compiled,
+                path,
+                opts,
+                |p, s| Ok(rewrite_text(p, s)),
+                regex_convergence_check,
+            )
+        })
         .collect();
     let changes = collect_changes(results)?;
     finalize_plan(changes, compiled.is_convergent(), files_scanned, opts)
+}
+
+fn regex_convergence_check(pattern: &CompiledPattern, after: &str) -> Result<usize> {
+    Ok(pattern.regex().find_iter(after).count())
 }
 
 /// Like [`plan_rewrite`] but each match drives a Rhai script callback
@@ -138,10 +150,15 @@ pub fn plan_rewrite_scripted<P: AsRef<Path>>(
     let files = scan(roots, opts)?;
     let files_scanned = files.len();
 
+    let rewrite = |p: &CompiledPattern, s: &str| rewrite_text_scripted(p, script, s);
+    let converge = |p: &CompiledPattern, s: &str| -> Result<usize> {
+        let outcome = rewrite_text_scripted(p, script, s)?;
+        Ok(if outcome.after != s { outcome.matches } else { 0 })
+    };
+
     let mut results: Vec<Result<Option<FileChange>>> = Vec::with_capacity(files_scanned);
     for path in &files {
-        results
-            .push(process_one(&compiled, path, opts, |p, s| rewrite_text_scripted(p, script, s)));
+        results.push(process_one(&compiled, path, opts, rewrite, converge));
     }
     let changes = collect_changes(results)?;
     // Scripts can't be probed statically; trust the per-file dynamic
@@ -166,7 +183,6 @@ fn collect_changes(results: Vec<Result<Option<FileChange>>>) -> Result<Vec<FileC
             changes.push(change);
         }
     }
-    changes.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(changes)
 }
 
@@ -216,51 +232,63 @@ pub fn check_match_counts(
     Ok(())
 }
 
-fn process_one<F>(
+fn process_one<R, C>(
     pattern: &CompiledPattern,
     path: &Path,
     opts: &PlanOptions,
-    rewrite: F,
+    rewrite: R,
+    convergence_check: C,
 ) -> Result<Option<FileChange>>
 where
-    F: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
+    R: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
+    C: Fn(&CompiledPattern, &str) -> Result<usize>,
 {
-    let metadata = fs::metadata(path).io_ctx(path)?;
-    if metadata.len() > opts.max_bytes {
-        return Err(Error::FileTooLarge {
-            path: path.to_path_buf(),
-            size: metadata.len(),
-            limit: opts.max_bytes,
-        });
-    }
-    let before = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Ok(None),
-        Err(e) => return Err(Error::Io { path: path.to_path_buf(), source: e }),
+    let before = match read_text_or_skip_binary(path, opts.max_bytes)? {
+        Some(s) => s,
+        None => return Ok(None),
     };
 
     let outcome = rewrite(pattern, &before)?;
-    if !outcome.changed() {
+    if outcome.matches == 0 || outcome.after == before {
         return Ok(None);
     }
     trace!(path = %path.display(), matches = outcome.matches, "file would change");
 
     if !opts.allow_non_convergent {
-        let second = rewrite(pattern, &outcome.after)?;
-        if second.changed() {
-            return Err(Error::NonConvergent { path: path.to_path_buf(), extra: second.matches });
+        let extra = convergence_check(pattern, &outcome.after)?;
+        if extra > 0 {
+            return Err(Error::NonConvergent { path: path.to_path_buf(), extra });
         }
     }
 
     let label = label_for_path(path);
-    let diff = unified_diff(&label, &outcome.before, &outcome.after);
+    let diff = unified_diff(&label, &before, &outcome.after);
     Ok(Some(FileChange {
         path: path.to_path_buf(),
         matches: outcome.matches,
-        before: outcome.before,
+        before,
         after: outcome.after,
         diff,
     }))
+}
+
+/// Read a candidate file, enforce the per-file byte limit, and yield
+/// `None` for paths whose contents aren't valid UTF-8 (binary skip).
+/// Shared by the regex and structural pipelines.
+pub(crate) fn read_text_or_skip_binary(path: &Path, max_bytes: u64) -> Result<Option<String>> {
+    let metadata = fs::metadata(path).io_ctx(path)?;
+    if metadata.len() > max_bytes {
+        return Err(Error::FileTooLarge {
+            path: path.to_path_buf(),
+            size: metadata.len(),
+            limit: max_bytes,
+        });
+    }
+    match fs::read_to_string(path) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => Ok(None),
+        Err(e) => Err(Error::Io { path: path.to_path_buf(), source: e }),
+    }
 }
 
 #[cfg(test)]

@@ -17,27 +17,31 @@ use crate::pattern::CompiledPattern;
 #[cfg(feature = "script")]
 use crate::script::ScriptRewriter;
 
-/// One file's pre-image, post-image, and match count.
+/// Post-image of a single-file rewrite plus the match count that produced
+/// it. The pre-image stays with the caller — that's why it isn't carried
+/// here.
 #[derive(Debug, Clone)]
 pub struct RewriteOutcome {
-    pub before: String,
     pub after: String,
     pub matches: usize,
 }
 
-impl RewriteOutcome {
-    /// `true` when the rewrite actually changed the input.
-    pub fn changed(&self) -> bool {
-        self.before != self.after
-    }
-}
-
 /// Apply `pattern` to `before` and return the rewrite outcome. Counts
-/// matches and produces the new text via `regex::replace_all`.
+/// matches and produces the new text in a single pass via
+/// `regex::replace_all` with an `expand`-driven closure.
 pub fn rewrite_text(pattern: &CompiledPattern, before: &str) -> RewriteOutcome {
-    let matches = pattern.regex().find_iter(before).count();
-    let after = pattern.regex().replace_all(before, pattern.replacement()).into_owned();
-    RewriteOutcome { before: before.to_owned(), after, matches }
+    let regex = pattern.regex();
+    let template = pattern.replacement();
+    let mut matches = 0usize;
+    let after = regex
+        .replace_all(before, |caps: &regex::Captures<'_>| {
+            matches += 1;
+            let mut dst = String::new();
+            caps.expand(template, &mut dst);
+            dst
+        })
+        .into_owned();
+    RewriteOutcome { after, matches }
 }
 
 /// Apply `pattern` to `before`, calling `script` once per match. The
@@ -52,13 +56,14 @@ pub fn rewrite_text_scripted(
     use std::cell::RefCell;
 
     let regex = pattern.regex();
-    let matches = regex.find_iter(before).count();
     let err_slot: RefCell<Option<crate::error::Error>> = RefCell::new(None);
+    let mut matches = 0usize;
 
     let after = regex.replace_all(before, |caps: &regex::Captures<'_>| {
         if err_slot.borrow().is_some() {
             return String::new();
         }
+        matches += 1;
         let caps_vec: Vec<&str> =
             caps.iter().map(|m| m.map(|m| m.as_str()).unwrap_or("")).collect();
         match script.replace(&caps_vec) {
@@ -73,7 +78,7 @@ pub fn rewrite_text_scripted(
     if let Some(e) = err_slot.into_inner() {
         return Err(e);
     }
-    Ok(RewriteOutcome { before: before.to_owned(), after: after.into_owned(), matches })
+    Ok(RewriteOutcome { after: after.into_owned(), matches })
 }
 
 /// Drop leading `./` (and repeats thereof) from a path so unified-diff

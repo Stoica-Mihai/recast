@@ -73,6 +73,8 @@ pub enum ErrorKind {
     StructuralTemplate,
     StructuralParse,
     Locked,
+    InvalidThreads,
+    ThreadPool,
 }
 
 impl JsonReport<'_> {
@@ -135,6 +137,8 @@ pub fn error_kind(err: &Error) -> ErrorKind {
         Error::StructuralTemplate(_) => ErrorKind::StructuralTemplate,
         Error::StructuralParse => ErrorKind::StructuralParse,
         Error::Locked { .. } => ErrorKind::Locked,
+        Error::InvalidThreads => ErrorKind::InvalidThreads,
+        Error::ThreadPool(_) => ErrorKind::ThreadPool,
     }
 }
 

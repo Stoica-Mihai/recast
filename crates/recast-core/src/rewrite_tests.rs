@@ -38,15 +38,15 @@ fn rewrite_counts_matches_and_replaces() {
     let r = rewrite_text(&p, "foo and foo");
     assert_eq!(r.matches, 2);
     assert_eq!(r.after, "bar and bar");
-    assert!(r.changed());
 }
 
 #[test]
 fn rewrite_with_no_match_is_unchanged() {
     let p = CompiledPattern::compile("foo", "bar", &PatternOptions::default()).unwrap();
-    let r = rewrite_text(&p, "nothing here");
+    let input = "nothing here";
+    let r = rewrite_text(&p, input);
     assert_eq!(r.matches, 0);
-    assert!(!r.changed());
+    assert_eq!(r.after, input);
 }
 
 #[test]

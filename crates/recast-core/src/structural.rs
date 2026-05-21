@@ -5,13 +5,14 @@
 //! them as `$name`. The capture named `@root` (or, if absent, the
 //! outermost match node) defines the byte range that gets replaced.
 
-use std::fs;
 use std::path::Path;
 
 use tree_sitter::{Language as TsLanguage, Node, Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::error::{Error, IoCtx, Result};
-use crate::plan::{FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts};
+use crate::error::{Error, Result};
+use crate::plan::{
+    FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, read_text_or_skip_binary,
+};
 use crate::rewrite::{label_for_path, unified_diff};
 use crate::walker::walk_paths;
 
@@ -253,18 +254,9 @@ pub fn plan_structural_rewrite<P: AsRef<Path>>(
 
     let mut changes: Vec<FileChange> = Vec::new();
     for path in &files {
-        let metadata = fs::metadata(path).io_ctx(path)?;
-        if metadata.len() > opts.max_bytes {
-            return Err(Error::FileTooLarge {
-                path: path.clone(),
-                size: metadata.len(),
-                limit: opts.max_bytes,
-            });
-        }
-        let before = match fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => continue,
-            Err(e) => return Err(Error::Io { path: path.clone(), source: e }),
+        let before = match read_text_or_skip_binary(path, opts.max_bytes)? {
+            Some(s) => s,
+            None => continue,
         };
         let outcome = structural_rewrite(lang, &before, query, template)?;
         if outcome.text == before {

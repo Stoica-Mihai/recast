@@ -59,6 +59,12 @@ pub enum Error {
         "another recast is already applying to this tree (lockfile {path} held); use --force to override"
     )]
     Locked { path: PathBuf },
+
+    #[error("invalid --threads value: must be at least 1")]
+    InvalidThreads,
+
+    #[error("failed to build worker thread pool: {0}")]
+    ThreadPool(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
