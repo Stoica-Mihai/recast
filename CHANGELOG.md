@@ -5,7 +5,14 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
-## [Unreleased]
+## [0.1.3] — 2026-05-21
+
+Big release bundling every prod-readiness item landed since v0.1.2:
+structural-mode atomic apply, crash recovery (`--recover`), friendly
+`$NAME` / `$$$ELLIPSIS` patterns, proptest harness, eight tree-sitter
+grammars (Rust, TS, TSX, JS, Python, Bash, Go, JSON, Markdown), and a
+release matrix that now ships aarch64-linux and musl static binaries
+alongside the existing x86_64-linux / macOS / Windows targets.
 
 ### Added
 
@@ -20,7 +27,20 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   replaced by `lang-rust`, `lang-ts`, `lang-js`, `lang-python`,
   `lang-bash`, `lang-go`, `lang-json`, `lang-md`, and the
   convenience `lang-all`. At least one `lang-*` must be enabled
-  for structural mode to compile. The `recast` binary defaults to
+  for structural mode to compile.
+- **Friendly `$NAME` / `$$$ELLIPSIS` patterns.** `--ast 'fn $NAME() {}'`
+  compiles target-language source into a tree-sitter query, with
+  `$NAME` for single-node capture and `$$$NAME` for variable-shape
+  subtree capture.
+- **Crash recovery sweep.** `recast --recover PATHS` scans for
+  leftover `.recast.bak.*` / `.recast.tmp.*` siblings from a
+  previously interrupted `--apply` and restores or cleans up.
+- **Structural `--apply` is atomic** — now routed through the same
+  two-phase commit + rollback used by regex/script modes.
+- **Cross-compiled Linux release binaries.** The release matrix
+  builds aarch64-unknown-linux-gnu plus x86_64 / aarch64
+  unknown-linux-musl via cross-rs, so Alpine, distroless, and
+  AWS Graviton consumers get pre-built artifacts. The `recast` binary defaults to
   `["script", "lang-all"]` so `cargo install --path crates/recast`
   still gets the full surface; users can opt out with
   `--no-default-features --features lang-rust` for a slim binary.
