@@ -1,0 +1,79 @@
+name: fuzz
+
+on:
+  schedule:
+    # 03:00 UTC daily. Picks up the previous day's corpus from cache so
+    # coverage compounds over weeks rather than restarting from zero.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: 'Per-target fuzz budget in seconds (default 3600)'
+        required: false
+        default: '3600'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  fuzz:
+    name: fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      # One target's crash must not abort the others — they're
+      # independent fuzz surfaces, not a build matrix.
+      fail-fast: false
+      matrix:
+        target:
+          - compile_friendly_query
+          - structural_rewrite_friendly
+          - pattern_compile_convergence
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install nightly toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            fuzz
+          key: fuzz-${{ matrix.target }}
+
+      # Cache the per-target corpus so each run resumes from the
+      # previous day's coverage instead of restarting libFuzzer from
+      # scratch. Key includes run_id so each run writes a fresh entry;
+      # restore-keys fall back to whatever the latest entry is.
+      - name: Cache fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Run fuzz target
+        working-directory: fuzz
+        env:
+          DURATION: ${{ github.event.inputs.duration_seconds || '3600' }}
+        run: |
+          cargo fuzz run ${{ matrix.target }} -- \
+            -max_total_time=${DURATION} \
+            -print_final_stats=1
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 30
