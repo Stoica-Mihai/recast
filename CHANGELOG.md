@@ -5,7 +5,9 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
-## [Unreleased]
+## [0.1.4] — 2026-05-21
+
+First crates.io release.
 
 ### Added
 
@@ -16,6 +18,23 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - Tag-pushed releases now publish both crates automatically via a
   new `publish-crates` job in `.github/workflows/release.yml`,
   gated on the `CARGO_REGISTRY_TOKEN` repository secret.
+- Concurrent-apply lockfile (`.recast.lock` per workspace), `--force`
+  escape hatch. Two `recast --apply` against the same tree no longer
+  interleave; second invocation errors out cleanly.
+- Friendlier tree-sitter query errors with line/column + caret;
+  `--ast` parse failures name the grammar that choked.
+- Criterion benchmark suite (`cargo bench --features lang-rust,script
+  -p recast-core`) covering regex compile, plan over 10/100/500
+  files, and a structural rewrite over a 200-fn source.
+- mdBook documentation under `docs/`, deployed to
+  https://stoica-mihai.github.io/recast/ on every push to `main`.
+
+### Changed
+
+- Workspace MSRV bumped from 1.85 to 1.89 to unlock
+  `std::fs::File::sync_all` + `unlock` + `OpenOptions::truncate(false)`.
+- Error chains print one cause per line instead of the previous
+  `{err:#}` double-printed style.
 
 ## [0.1.3] — 2026-05-21
 
