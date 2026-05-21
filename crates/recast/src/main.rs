@@ -6,9 +6,8 @@ use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use recast_core::{
     Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome, WalkOptions, apply_changes,
-    plan_rewrite,
+    json, plan_rewrite,
 };
-use serde::Serialize;
 
 const EXIT_OK: u8 = 0;
 const EXIT_CHECK_WOULD_CHANGE: u8 = 1;
@@ -136,36 +135,6 @@ impl Cli {
     }
 }
 
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum JsonOutput<'a> {
-    Plan {
-        outcome: PlanOutcome,
-        files_scanned: usize,
-        files_changed: usize,
-        total_matches: usize,
-        changes: Vec<JsonFile<'a>>,
-    },
-    Apply {
-        outcome: PlanOutcome,
-        files_scanned: usize,
-        files_written: usize,
-        total_matches: usize,
-    },
-    Check {
-        outcome: PlanOutcome,
-        files_scanned: usize,
-        files_would_change: usize,
-        total_matches: usize,
-    },
-}
-
-#[derive(Serialize)]
-struct JsonFile<'a> {
-    path: &'a std::path::Path,
-    matches: usize,
-}
-
 fn main() -> ExitCode {
     init_tracing();
     let cli = Cli::parse();
@@ -201,13 +170,7 @@ fn run(cli: Cli) -> Result<u8> {
         emit_apply(&cli, &plan).context("emit apply output")?;
         let outcome = apply_changes(&plan).context("apply changes")?;
         if cli.json {
-            let json = JsonOutput::Apply {
-                outcome: plan.outcome,
-                files_scanned: plan.files_scanned,
-                files_written: outcome.files_written,
-                total_matches: outcome.total_matches,
-            };
-            println!("{}", serde_json::to_string(&json)?);
+            println!("{}", json::from_apply(&plan, &outcome).to_line()?);
         }
         return Ok(EXIT_OK);
     }
@@ -215,13 +178,7 @@ fn run(cli: Cli) -> Result<u8> {
     if cli.check {
         let would_change = plan.changes.len();
         if cli.json {
-            let json = JsonOutput::Check {
-                outcome: plan.outcome,
-                files_scanned: plan.files_scanned,
-                files_would_change: would_change,
-                total_matches: plan.total_matches,
-            };
-            println!("{}", serde_json::to_string(&json)?);
+            println!("{}", json::from_check(&plan).to_line()?);
         }
         if matches!(plan.outcome, PlanOutcome::AlreadyApplied) || would_change == 0 {
             return Ok(EXIT_OK);
@@ -235,18 +192,7 @@ fn run(cli: Cli) -> Result<u8> {
 
 fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
     if cli.json {
-        let json = JsonOutput::Plan {
-            outcome: plan.outcome,
-            files_scanned: plan.files_scanned,
-            files_changed: plan.changes.len(),
-            total_matches: plan.total_matches,
-            changes: plan
-                .changes
-                .iter()
-                .map(|c| JsonFile { path: c.path.as_path(), matches: c.matches })
-                .collect(),
-        };
-        println!("{}", serde_json::to_string(&json)?);
+        println!("{}", json::from_plan(plan).to_line()?);
         return Ok(());
     }
 
@@ -298,24 +244,17 @@ fn emit_apply(cli: &Cli, plan: &Plan) -> Result<()> {
     Ok(())
 }
 
-fn handle_plan_error(err: CoreError, json: bool) -> u8 {
-    let (code, message) = match &err {
-        CoreError::TooFewMatches { .. } | CoreError::TooManyMatches { .. } => {
-            (EXIT_GUARD_VIOLATED, err.to_string())
-        }
-        _ => (EXIT_INTERNAL, err.to_string()),
+fn handle_plan_error(err: CoreError, as_json: bool) -> u8 {
+    let code = match &err {
+        CoreError::TooFewMatches { .. } | CoreError::TooManyMatches { .. } => EXIT_GUARD_VIOLATED,
+        _ => EXIT_INTERNAL,
     };
-    if json {
-        #[derive(Serialize)]
-        struct ErrJson<'a> {
-            kind: &'static str,
-            error: &'a str,
-        }
-        if let Ok(s) = serde_json::to_string(&ErrJson { kind: "error", error: &message }) {
-            println!("{s}");
+    if as_json {
+        if let Ok(line) = json::from_error(&err, code).to_line() {
+            println!("{line}");
         }
     } else {
-        eprintln!("recast: {message}");
+        eprintln!("recast: {err}");
     }
     code
 }

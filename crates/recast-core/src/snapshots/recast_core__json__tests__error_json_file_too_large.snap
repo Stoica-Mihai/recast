@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 106
+expression: "from_error(&err, 3).to_line().unwrap()"
+---
+{"kind":"error","error":"file_too_large","message":"file big.bin exceeds --max-bytes (20000000 > 10485760)","exit_code":3}

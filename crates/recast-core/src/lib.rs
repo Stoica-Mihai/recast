@@ -7,6 +7,8 @@
 
 mod commit;
 mod error;
+#[cfg(feature = "serde")]
+pub mod json;
 mod pattern;
 mod plan;
 mod rewrite;

@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 99
+expression: "from_error(&err, 3).to_line().unwrap()"
+---
+{"kind":"error","error":"too_many_files","message":"scan touched 1500 files; refusing (--max-files = 1000)","exit_code":3}

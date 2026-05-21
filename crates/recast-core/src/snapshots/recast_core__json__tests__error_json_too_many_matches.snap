@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 87
+expression: "from_error(&err, 2).to_line().unwrap()"
+---
+{"kind":"error","error":"too_many_matches","message":"match-count guard violated: found 5, allowed at most 3","exit_code":2}

@@ -210,6 +210,71 @@ Exit codes:
 - `2` — match-count guard violated (no matches when `--at-least 1`, etc).
 - `3` — internal error (parse, I/O, atomic rollback).
 
+### 7.1 JSON output schema
+
+`--json` emits exactly one line of compact JSON on stdout per invocation
+(errors go to stdout too, not stderr, so an agent has a single stream to
+parse). Snapshot-locked in `crates/recast-core/src/snapshots/` — changing
+field names or order is a breaking change.
+
+Every report carries a `kind` discriminator: `plan` | `apply` | `check` |
+`error`. Non-error reports share `outcome` (`"changes"` or
+`"already_applied"`), `files_scanned`, and `total_matches`. Each mode adds
+the count it owns.
+
+```jsonc
+// plan (default mode)
+{
+  "kind": "plan",
+  "outcome": "changes" | "already_applied",
+  "files_scanned": 5,
+  "files_changed": 2,
+  "total_matches": 3,
+  "changes": [
+    { "path": "src/a.rs", "matches": 2 },
+    { "path": "src/b.rs", "matches": 1 }
+  ]
+}
+
+// apply
+{
+  "kind": "apply",
+  "outcome": "changes" | "already_applied",
+  "files_scanned": 5,
+  "files_written": 2,
+  "total_matches": 3
+}
+
+// check
+{
+  "kind": "check",
+  "outcome": "changes" | "already_applied",
+  "files_scanned": 5,
+  "files_would_change": 2,
+  "total_matches": 3
+}
+
+// error
+{
+  "kind": "error",
+  "error": "too_few_matches"
+         | "too_many_matches"
+         | "non_convergent"
+         | "too_many_files"
+         | "file_too_large"
+         | "invalid_regex"
+         | "invalid_glob"
+         | "walk"
+         | "io",
+  "message": "human-readable description",
+  "exit_code": 2 | 3
+}
+```
+
+`error` carries the process exit code so the agent can act without
+re-reading `$?`. `too_few_matches` and `too_many_matches` map to exit 2;
+the rest map to exit 3.
+
 ## 8. Architecture sketch
 
 ```

@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 58
+expression: "from_apply(&plan, &outcome).to_line().unwrap()"
+---
+{"kind":"apply","outcome":"changes","files_scanned":5,"files_written":2,"total_matches":3}
