@@ -28,7 +28,7 @@ similar = "2"
 tempfile = "3"
 rayon = "1"
 fs2 = "0.4"
-rhai = { version = "1", default-features = false, features = ["std", "no_custom_syntax", "no_module"] }
+rhai = { version = "1", default-features = false, features = ["std", "no_custom_syntax", "no_module", "sync"] }
 tree-sitter = "0.25"
 tree-sitter-rust = "0.24"
 tree-sitter-typescript = "0.23"

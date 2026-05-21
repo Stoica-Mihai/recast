@@ -40,6 +40,15 @@ impl ScriptRewriter {
         Self::from_source(&source)
     }
 
+    /// Build a sibling rewriter that shares the compiled AST with `self`
+    /// but owns a fresh sandboxed engine. Rhai `Engine` is `!Sync`, so
+    /// parallel pipelines that want to evaluate the same script on
+    /// multiple worker threads call `fresh()` per worker (e.g. via
+    /// `rayon::par_iter().map_init(|| script.fresh(), ...)`).
+    pub fn fresh(&self) -> Self {
+        Self { engine: sandboxed_engine(), ast: self.ast.clone() }
+    }
+
     /// Evaluate the script with `captures` (index 0 = full match) and
     /// return the resulting replacement string.
     pub fn replace(&self, captures: &[&str]) -> Result<String> {

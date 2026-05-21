@@ -135,9 +135,11 @@ fn regex_convergence_check(pattern: &CompiledPattern, after: &str) -> Result<usi
 
 /// Like [`plan_rewrite`] but each match drives a Rhai script callback
 /// instead of a static template. The pattern's `replacement` field is
-/// ignored. Runs sequentially because the rhai engine isn't `Sync` by
-/// default — typically fine since scripted rewrites are a small share
-/// of files in practice.
+/// ignored.
+///
+/// Each rayon worker gets its own sandboxed Rhai `Engine` (via
+/// [`ScriptRewriter::fresh`]) because `Engine` is `!Sync`; the compiled
+/// AST is shared by reference across workers.
 #[cfg(feature = "script")]
 pub fn plan_rewrite_scripted<P: AsRef<Path>>(
     pattern: &str,
@@ -150,16 +152,20 @@ pub fn plan_rewrite_scripted<P: AsRef<Path>>(
     let files = scan(roots, opts)?;
     let files_scanned = files.len();
 
-    let rewrite = |p: &CompiledPattern, s: &str| rewrite_text_scripted(p, script, s);
-    let converge = |p: &CompiledPattern, s: &str| -> Result<usize> {
-        let outcome = rewrite_text_scripted(p, script, s)?;
-        Ok(if outcome.after != s { outcome.matches } else { 0 })
-    };
-
-    let mut results: Vec<Result<Option<FileChange>>> = Vec::with_capacity(files_scanned);
-    for path in &files {
-        results.push(process_one(&compiled, path, opts, rewrite, converge));
-    }
+    let results: Vec<Result<Option<FileChange>>> = files
+        .par_iter()
+        .map_init(
+            || script.fresh(),
+            |worker, path| {
+                let rewrite = |p: &CompiledPattern, s: &str| rewrite_text_scripted(p, worker, s);
+                let converge = |p: &CompiledPattern, s: &str| -> Result<usize> {
+                    let outcome = rewrite_text_scripted(p, worker, s)?;
+                    Ok(if outcome.after != s { outcome.matches } else { 0 })
+                };
+                process_one(&compiled, path, opts, rewrite, converge)
+            },
+        )
+        .collect();
     let changes = collect_changes(results)?;
     // Scripts can't be probed statically; trust the per-file dynamic
     // convergence check inside process_one and treat zero matches as
