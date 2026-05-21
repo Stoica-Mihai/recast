@@ -37,6 +37,16 @@ hardening surfaced by an internal review.
   full second `replace_all` round.
 - **HashSet parent-dir dedup in fsync.** `best_effort_fsync_parents`
   was O(N²) via `Vec<PathBuf>::iter().any(...)`; now `HashSet<&Path>`.
+- **Planner peak memory ~halved.** `FileChange::before` (full
+  pre-image per changed file) is dropped — it was set during diff
+  rendering and never read afterward. Worst-case (max_bytes 10 MiB ×
+  max_files 1000) drops ~10 GiB from peak resident memory.
+- **Hot-path micro-allocations trimmed.** `label_for_path` skips the
+  `\` → `/` scan on Unix where it can't matter; structural splice
+  pre-reserves `source.len() + (replacement - range) delta` so the
+  output `String` doesn't realloc when matches grow text;
+  `emit_node` writes literal-terminal predicates with `write!`
+  instead of three intermediate `format!` Strings per terminal.
 
 ### Changed
 
@@ -56,6 +66,24 @@ hardening surfaced by an internal review.
 - **`RewriteOutcome` shape.** Dropped the `before` field — the caller
   already owns the pre-image. `changed()` method removed; compare
   `outcome.after != before` at the call site if needed.
+- **`FileChange.before` field removed.** Was `#[serde(skip)]` and
+  only used to render the diff during planning; `apply_changes` has
+  always read from `after`. Pre-1.0 break for anyone reading the
+  field directly; `FileChange.diff` carries the rendered diff.
+- **`handle_plan_error` returns `Result<u8>`** instead of `u8` so a
+  failed JSON serialize during error reporting is now observable
+  rather than silently dropped.
+- **CLI options grouped into substructs.** Output (`--diff` /
+  `--json` / `--quiet` / `--verbose`), guards (`--at-least` /
+  `--at-most` / `--allow-non-convergent` / `--max-bytes` /
+  `--max-files`), and structural (`--lang` / `--query` / `--ast`)
+  are now `#[command(flatten)]`-ed substructs. CLI surface
+  byte-identical; only the in-code access path changes
+  (`cli.output.json`, `cli.guard.max_files`, etc.).
+- **`SiblingKind` enum drives recast-sibling filenames.** The
+  `.{target}.recast.{token}.{nonce}` token (`bak` / `tmp`) is now
+  emitted and parsed through one `SiblingKind::as_str` /
+  `SiblingKind::from_token` pair so the two sides cannot drift.
 
 ### Added
 
@@ -86,6 +114,24 @@ hardening surfaced by an internal review.
 - Binary's `Language::from_name` / `dispatch(plan)` helpers consolidate
   the apply / check / diff trailer duplicated between `run` and
   `run_structural`.
+- Binary `Cli` adds `min_matches()`, `paths_as_pathbufs()`,
+  `recover_paths()`, and `acquire_workspace_lock_for(&cli)` helpers
+  so the recurring `Some(at_least.unwrap_or(1))`, path conversions,
+  the `--recover` clap-workaround fold, and the lock-root probe
+  each live in one place.
+- `CompiledStructural::apply` collects matches into a named
+  `struct Hit { start, end, replacement }` instead of the positional
+  `(usize, usize, String)` tuple it had before — readability only.
+
+### Documentation
+
+- `CHANGELOG.md` + `PLAN.md` §7.1 + `docs/src/json-schema.md`
+  brought back in sync with the wire format (shared-header field
+  order; full `ErrorKind` vocabulary including
+  `invalid_threads` / `thread_pool`).
+- `AGENTS.md` §11 records the harness-classifier workaround for
+  `git commit`: split `git add` and `git commit` into separate
+  shell calls; do not chain them with `&&` + heredoc.
 
 ## [0.1.6] — 2026-05-21
 
