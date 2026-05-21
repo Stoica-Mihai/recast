@@ -71,8 +71,12 @@ fn finalize_apply(
     match result {
         Ok(committed) => {
             debug!(files = committed.len(), "apply: commit phase complete");
-            best_effort_cleanup_backups(&committed);
+            // Fsync parents BEFORE unlinking backups: the rename batch's
+            // directory entries must be durable before the safety net is
+            // dropped, otherwise a crash in the window can leave the target
+            // absent with the backup already gone.
             best_effort_fsync_parents(&committed);
+            best_effort_cleanup_backups(&committed);
             Ok(ApplyOutcome {
                 files_written: plan.changes.len(),
                 total_matches: plan.total_matches,
@@ -231,8 +235,10 @@ fn commit_one(staged: &Staged, nonces: &NonceGen) -> Result<Committed> {
 }
 
 fn rollback_committed(committed: &[Committed]) {
+    // Unix `rename` replaces the destination atomically, so a separate
+    // `remove_file(&c.target)` would only open a window where neither old
+    // nor new content exists. Trust the rename to do the swap in one step.
     for c in committed.iter().rev() {
-        let _ = fs::remove_file(&c.target);
         let _ = fs::rename(&c.backup_path, &c.target);
     }
 }
