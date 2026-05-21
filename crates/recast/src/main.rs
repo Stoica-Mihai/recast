@@ -358,7 +358,7 @@ fn resolve_lang(name: &str) -> Result<Language> {
 
 fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {
     if cli.apply {
-        emit_apply(cli, plan).context("emit apply output")?;
+        emit_apply(&cli.output, plan).context("emit apply output")?;
         let outcome = apply_changes(plan).context("apply changes")?;
         if cli.output.json {
             println!("{}", json::from_apply(plan, &outcome).to_line()?);
@@ -377,7 +377,7 @@ fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {
         return Ok(EXIT_CHECK_WOULD_CHANGE);
     }
 
-    emit_diff(cli, plan).context("emit diff output")?;
+    emit_diff(&cli.output, plan).context("emit diff output")?;
     Ok(EXIT_OK)
 }
 
@@ -430,8 +430,8 @@ fn run_stdin(
     Ok(EXIT_OK)
 }
 
-fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
-    if cli.output.json {
+fn emit_diff(out: &OutputOptions, plan: &Plan) -> Result<()> {
+    if out.json {
         println!("{}", json::from_plan(plan).to_line()?);
         return Ok(());
     }
@@ -441,7 +441,7 @@ fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
         writeln!(stdout, "recast: already applied; no changes needed.")?;
         return Ok(());
     }
-    if !cli.output.quiet {
+    if !out.quiet {
         for change in &plan.changes {
             stdout.write_all(change.diff.as_bytes())?;
         }
@@ -456,8 +456,8 @@ fn emit_diff(cli: &Cli, plan: &Plan) -> Result<()> {
     Ok(())
 }
 
-fn emit_apply(cli: &Cli, plan: &Plan) -> Result<()> {
-    if cli.output.json {
+fn emit_apply(out: &OutputOptions, plan: &Plan) -> Result<()> {
+    if out.json {
         return Ok(());
     }
     let mut stderr = io::stderr().lock();
@@ -465,7 +465,7 @@ fn emit_apply(cli: &Cli, plan: &Plan) -> Result<()> {
         writeln!(stderr, "recast: already applied; no changes needed.")?;
         return Ok(());
     }
-    if cli.output.verbose {
+    if out.verbose {
         for change in &plan.changes {
             writeln!(
                 stderr,
