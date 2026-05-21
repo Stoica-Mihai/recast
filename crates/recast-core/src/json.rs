@@ -66,6 +66,8 @@ pub enum ErrorKind {
     NonConvergent,
     TooFewMatches,
     TooManyMatches,
+    ScriptParse,
+    ScriptRuntime,
 }
 
 impl JsonReport<'_> {
@@ -121,6 +123,8 @@ pub fn error_kind(err: &Error) -> ErrorKind {
         Error::NonConvergent { .. } => ErrorKind::NonConvergent,
         Error::TooFewMatches { .. } => ErrorKind::TooFewMatches,
         Error::TooManyMatches { .. } => ErrorKind::TooManyMatches,
+        Error::ScriptParse(_) => ErrorKind::ScriptParse,
+        Error::ScriptRuntime(_) => ErrorKind::ScriptRuntime,
     }
 }
 

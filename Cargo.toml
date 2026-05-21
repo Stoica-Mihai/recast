@@ -25,6 +25,7 @@ similar = "2"
 tempfile = "3"
 rustix = { version = "1", default-features = false, features = ["fs"] }
 rayon = "1"
+rhai = { version = "1", default-features = false, features = ["std", "no_custom_syntax", "no_module"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 serde = { version = "1", features = ["derive"] }

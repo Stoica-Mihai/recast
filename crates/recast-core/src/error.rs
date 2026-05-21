@@ -36,6 +36,12 @@ pub enum Error {
 
     #[error("match-count guard violated: found {found}, allowed at most {allowed}")]
     TooManyMatches { found: usize, allowed: usize },
+
+    #[error("script parse error: {0}")]
+    ScriptParse(String),
+
+    #[error("script runtime error: {0}")]
+    ScriptRuntime(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

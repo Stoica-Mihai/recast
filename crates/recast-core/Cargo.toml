@@ -16,6 +16,7 @@ similar.workspace = true
 tempfile.workspace = true
 rustix.workspace = true
 rayon.workspace = true
+rhai = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 serde = { workspace = true, optional = true }
@@ -24,6 +25,7 @@ serde_json = { workspace = true, optional = true }
 [features]
 default = []
 serde = ["dep:serde", "dep:serde_json"]
+script = ["dep:rhai"]
 
 [dev-dependencies]
 tempfile.workspace = true

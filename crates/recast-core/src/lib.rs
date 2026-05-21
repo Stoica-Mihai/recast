@@ -13,6 +13,8 @@ mod parallel;
 mod pattern;
 mod plan;
 mod rewrite;
+#[cfg(feature = "script")]
+mod script;
 mod walker;
 
 pub use commit::{ApplyOutcome, apply_changes};
@@ -21,4 +23,6 @@ pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};
 pub use plan::{FileChange, Plan, PlanOptions, PlanOutcome, plan_rewrite};
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
+#[cfg(feature = "script")]
+pub use script::ScriptRewriter;
 pub use walker::{WalkOptions, walk_paths};
