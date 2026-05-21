@@ -10,6 +10,7 @@ use tree_sitter::{Language as TsLanguage, Node, Parser, Query, QueryCursor, Stre
 use crate::error::{Error, Result};
 
 const METAVAR_PREFIX: &str = "__RECAST_VAR_";
+const ELLIPSIS_PREFIX: &str = "__RECAST_ELLIPSIS_";
 const METAVAR_SUFFIX: &str = "__";
 
 /// Language registry for structural rewrites. Add a variant per
@@ -246,6 +247,24 @@ fn substitute_metavars(pattern: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
+        // $$$NAME — ellipsis metavar (variable-shape subtree)
+        if b == b'$'
+            && i + 3 < bytes.len()
+            && bytes[i + 1] == b'$'
+            && bytes[i + 2] == b'$'
+            && (bytes[i + 3].is_ascii_alphabetic() || bytes[i + 3] == b'_')
+        {
+            let mut j = i + 3;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                j += 1;
+            }
+            let name = &pattern[i + 3..j];
+            out.push_str(ELLIPSIS_PREFIX);
+            out.push_str(name);
+            out.push_str(METAVAR_SUFFIX);
+            i = j;
+            continue;
+        }
         if b == b'$'
             && i + 1 < bytes.len()
             && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
@@ -275,6 +294,11 @@ fn emit_node(
     src: &[u8],
 ) {
     if !node.is_named() {
+        return;
+    }
+    if let Some(ellipsis) = subtree_ellipsis_capture(node, src) {
+        buf.push_str(" (_) @");
+        buf.push_str(&ellipsis);
         return;
     }
     if let Some(meta) = metavar_at(node, src) {
@@ -332,6 +356,43 @@ fn metavar_at(node: Node<'_>, src: &[u8]) -> Option<String> {
         return None;
     }
     Some(stripped.to_owned())
+}
+
+/// Walk the subtree rooted at `node` and, if it contains exactly one
+/// ellipsis identifier (`$$$NAME` → `__RECAST_ELLIPSIS_NAME__`) and no
+/// other named leaves carrying meaningful content (no literals, no
+/// single-node metavars), return the ellipsis name. Such a subtree
+/// collapses to a single `(_) @NAME` wildcard in the generated query
+/// so the parent field can match any shape.
+fn subtree_ellipsis_capture(node: Node<'_>, src: &[u8]) -> Option<String> {
+    let mut ellipsis: Option<String> = None;
+    let mut other_leaves = 0usize;
+    let mut stack = vec![node];
+    while let Some(n) = stack.pop() {
+        if !n.is_named() {
+            continue;
+        }
+        if n.named_child_count() == 0 {
+            let text = n.utf8_text(src).ok()?;
+            if let Some(stripped) =
+                text.strip_prefix(ELLIPSIS_PREFIX).and_then(|s| s.strip_suffix(METAVAR_SUFFIX))
+                && !stripped.is_empty()
+            {
+                if ellipsis.is_some() {
+                    return None;
+                }
+                ellipsis = Some(stripped.to_owned());
+                continue;
+            }
+            other_leaves += 1;
+            continue;
+        }
+        let mut c = n.walk();
+        for child in n.named_children(&mut c) {
+            stack.push(child);
+        }
+    }
+    if other_leaves == 0 { ellipsis } else { None }
 }
 
 #[cfg(test)]

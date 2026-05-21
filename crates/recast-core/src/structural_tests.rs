@@ -106,6 +106,41 @@ fn friendly_pattern_unparseable_returns_query_error() {
 }
 
 #[test]
+fn friendly_pattern_ellipsis_matches_any_args_and_body() {
+    let source = "fn foo() {}\nfn bar(x: u32, y: u32) { println!(\"hi {x} {y}\"); }\n";
+    // Ellipsis captures the whole wrapper node (parens or braces
+    // included), so the template must NOT re-add `(...)` / `{...}`
+    // around `$ARGS` / `$BODY`.
+    let out = structural_rewrite_friendly(
+        Language::Rust,
+        source,
+        "fn $NAME($$$ARGS) { $$$BODY }",
+        "fn ${NAME}_v2$ARGS $BODY",
+    )
+    .unwrap();
+    assert_eq!(out.matches, 2);
+    assert!(out.text.contains("fn foo_v2()"), "got: {}", out.text);
+    assert!(out.text.contains("fn bar_v2(x: u32, y: u32)"), "got: {}", out.text);
+    assert!(out.text.contains("println!(\"hi {x} {y}\")"), "got: {}", out.text);
+}
+
+#[test]
+fn friendly_pattern_ellipsis_preserves_body_text() {
+    let source = "fn greet() { println!(\"hi\"); let n = 1 + 2; }\n";
+    let out = structural_rewrite_friendly(
+        Language::Rust,
+        source,
+        "fn $NAME() { $$$BODY }",
+        "fn ${NAME}_renamed() $BODY",
+    )
+    .unwrap();
+    assert_eq!(out.matches, 1);
+    assert!(out.text.contains("fn greet_renamed()"));
+    assert!(out.text.contains("println!(\"hi\")"));
+    assert!(out.text.contains("let n = 1 + 2"));
+}
+
+#[test]
 fn friendly_pattern_no_matches_leaves_source_intact() {
     let source = "fn foo() {}";
     let out = structural_rewrite_friendly(
