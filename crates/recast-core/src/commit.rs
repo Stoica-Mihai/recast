@@ -11,7 +11,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use rustix::fs::fsync;
 use tracing::{debug, trace};
 
 use crate::error::{Error, Result};
@@ -123,8 +122,7 @@ fn stage_one(change: &FileChange) -> Result<Staged> {
     file.write_all(change.after.as_bytes())
         .map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
     file.flush().map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
-    fsync(&file)
-        .map_err(|e| Error::Io { path: temp_path.clone(), source: std::io::Error::from(e) })?;
+    file.sync_all().map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
     drop(file);
 
     if let Some(perm) = permissions
@@ -216,8 +214,12 @@ fn best_effort_fsync_parents(committed: &[Committed]) {
                 continue;
             }
             seen.push(parent.to_path_buf());
+            // Windows does not allow fsync'ing a directory handle; the
+            // per-file sync_all already covers durability on that
+            // platform, so this loop is a no-op there.
+            #[cfg(unix)]
             if let Ok(dir) = File::open(parent) {
-                let _ = fsync(&dir);
+                let _ = dir.sync_all();
             }
         }
     }

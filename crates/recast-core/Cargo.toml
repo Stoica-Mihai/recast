@@ -14,7 +14,6 @@ ignore.workspace = true
 globset.workspace = true
 similar.workspace = true
 tempfile.workspace = true
-rustix.workspace = true
 rayon.workspace = true
 rhai = { workspace = true, optional = true }
 thiserror.workspace = true

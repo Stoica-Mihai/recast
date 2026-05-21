@@ -5,6 +5,20 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
+## [0.1.2] — 2026-05-21
+
+Windows build hotfix for the release workflow. The `rustix::fs::fsync`
+call was Unix-only; the x86_64-pc-windows-msvc leg of the v0.1.1
+release matrix failed to compile and the publish step was skipped, so
+v0.1.1 shipped without binaries.
+
+### Fixed
+
+- Replace `rustix::fs::fsync` with `std::fs::File::sync_all()`
+  (cross-platform). Parent-directory fsync is now `#[cfg(unix)]`-gated;
+  Windows relies on per-file `sync_all` for durability.
+- Drop the `rustix` workspace dependency entirely (no longer needed).
+
 ## [0.1.1] — 2026-05-21
 
 Re-tag of 0.1.0 to ship pre-built binaries via the new release
