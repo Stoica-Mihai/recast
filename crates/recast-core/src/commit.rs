@@ -7,7 +7,7 @@
 //! temps are deleted. On success, backups are removed and parent dirs
 //! are fsynced so the rename batch is durable.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -218,7 +218,7 @@ fn best_effort_fsync_parents(committed: &[Committed]) {
             // per-file sync_all already covers durability on that
             // platform, so this loop is a no-op there.
             #[cfg(unix)]
-            if let Ok(dir) = File::open(parent) {
+            if let Ok(dir) = std::fs::File::open(parent) {
                 let _ = dir.sync_all();
             }
         }
