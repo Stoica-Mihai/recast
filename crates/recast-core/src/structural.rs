@@ -185,22 +185,7 @@ impl CompiledStructural {
                         ))
                     })?
                 }
-                // No `@root`: pick the outermost-by-byte-range capture
-                // deterministically (smallest start, then largest end,
-                // then lowest capture index). The previous fallback of
-                // "capture with the largest index" was declaration-order
-                // dependent and gave subtly wrong replacements when a
-                // query bound multiple captures without an explicit root.
-                None => m
-                    .captures
-                    .iter()
-                    .min_by(|a, b| {
-                        a.node
-                            .start_byte()
-                            .cmp(&b.node.start_byte())
-                            .then_with(|| b.node.end_byte().cmp(&a.node.end_byte()))
-                            .then_with(|| a.index.cmp(&b.index))
-                    })
+                None => outermost_capture(m.captures)
                     .ok_or_else(|| Error::StructuralQuery("match bound no captures".into()))?,
             };
             let replacement = self.render(source, m.captures)?;
@@ -600,6 +585,23 @@ fn emit_node(
             }
         }
     }
+}
+
+/// Pick the outermost-by-byte-range capture in a match: smallest start
+/// byte wins; ties break to the largest end byte; final tiebreak is the
+/// lowest capture index for stability across queries that differ only
+/// in capture declaration order. Used when a query lacks an explicit
+/// `@root` so the apply phase still picks a deterministic primary.
+fn outermost_capture<'a, 'tree>(
+    captures: &'a [tree_sitter::QueryCapture<'tree>],
+) -> Option<&'a tree_sitter::QueryCapture<'tree>> {
+    captures.iter().min_by(|a, b| {
+        a.node
+            .start_byte()
+            .cmp(&b.node.start_byte())
+            .then_with(|| b.node.end_byte().cmp(&a.node.end_byte()))
+            .then_with(|| a.index.cmp(&b.index))
+    })
 }
 
 /// Render a tree-sitter `QueryError` with the offending fragment and a
