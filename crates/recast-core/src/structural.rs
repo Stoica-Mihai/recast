@@ -29,6 +29,14 @@ pub enum Language {
     JavaScript,
     #[cfg(feature = "lang-python")]
     Python,
+    #[cfg(feature = "lang-bash")]
+    Bash,
+    #[cfg(feature = "lang-go")]
+    Go,
+    #[cfg(feature = "lang-json")]
+    Json,
+    #[cfg(feature = "lang-md")]
+    Markdown,
 }
 
 impl Language {
@@ -44,9 +52,17 @@ impl Language {
             #[cfg(feature = "lang-ts")]
             "tsx" => Some(Language::Tsx),
             #[cfg(feature = "lang-js")]
-            "javascript" | "js" => Some(Language::JavaScript),
+            "javascript" | "js" | "jsx" => Some(Language::JavaScript),
             #[cfg(feature = "lang-python")]
             "python" | "py" => Some(Language::Python),
+            #[cfg(feature = "lang-bash")]
+            "bash" | "sh" | "shell" => Some(Language::Bash),
+            #[cfg(feature = "lang-go")]
+            "go" | "golang" => Some(Language::Go),
+            #[cfg(feature = "lang-json")]
+            "json" => Some(Language::Json),
+            #[cfg(feature = "lang-md")]
+            "markdown" | "md" => Some(Language::Markdown),
             _ => None,
         }
     }
@@ -63,6 +79,14 @@ impl Language {
             Language::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
             #[cfg(feature = "lang-python")]
             Language::Python => tree_sitter_python::LANGUAGE.into(),
+            #[cfg(feature = "lang-bash")]
+            Language::Bash => tree_sitter_bash::LANGUAGE.into(),
+            #[cfg(feature = "lang-go")]
+            Language::Go => tree_sitter_go::LANGUAGE.into(),
+            #[cfg(feature = "lang-json")]
+            Language::Json => tree_sitter_json::LANGUAGE.into(),
+            #[cfg(feature = "lang-md")]
+            Language::Markdown => tree_sitter_md::LANGUAGE.into(),
         }
     }
 }

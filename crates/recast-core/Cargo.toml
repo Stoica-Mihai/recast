@@ -22,6 +22,10 @@ tree-sitter-rust = { workspace = true, optional = true }
 tree-sitter-typescript = { workspace = true, optional = true }
 tree-sitter-javascript = { workspace = true, optional = true }
 tree-sitter-python = { workspace = true, optional = true }
+tree-sitter-bash = { workspace = true, optional = true }
+tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-json = { workspace = true, optional = true }
+tree-sitter-md = { workspace = true, optional = true }
 tracing.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -37,7 +41,20 @@ lang-rust = ["dep:tree-sitter", "dep:tree-sitter-rust"]
 lang-ts = ["dep:tree-sitter", "dep:tree-sitter-typescript"]
 lang-js = ["dep:tree-sitter", "dep:tree-sitter-javascript"]
 lang-python = ["dep:tree-sitter", "dep:tree-sitter-python"]
-lang-all = ["lang-rust", "lang-ts", "lang-js", "lang-python"]
+lang-bash = ["dep:tree-sitter", "dep:tree-sitter-bash"]
+lang-go = ["dep:tree-sitter", "dep:tree-sitter-go"]
+lang-json = ["dep:tree-sitter", "dep:tree-sitter-json"]
+lang-md = ["dep:tree-sitter", "dep:tree-sitter-md"]
+lang-all = [
+    "lang-rust",
+    "lang-ts",
+    "lang-js",
+    "lang-python",
+    "lang-bash",
+    "lang-go",
+    "lang-json",
+    "lang-md",
+]
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -28,7 +28,20 @@ lang-rust = ["recast-core/lang-rust"]
 lang-ts = ["recast-core/lang-ts"]
 lang-js = ["recast-core/lang-js"]
 lang-python = ["recast-core/lang-python"]
-lang-all = ["lang-rust", "lang-ts", "lang-js", "lang-python"]
+lang-bash = ["recast-core/lang-bash"]
+lang-go = ["recast-core/lang-go"]
+lang-json = ["recast-core/lang-json"]
+lang-md = ["recast-core/lang-md"]
+lang-all = [
+    "lang-rust",
+    "lang-ts",
+    "lang-js",
+    "lang-python",
+    "lang-bash",
+    "lang-go",
+    "lang-json",
+    "lang-md",
+]
 
 [dev-dependencies]
 tempfile.workspace = true

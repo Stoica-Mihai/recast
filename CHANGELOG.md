@@ -9,13 +9,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ### Added
 
-- **TypeScript / TSX / JavaScript / Python grammars** for structural
-  mode. `Language` enum now has `Rust | TypeScript | Tsx | JavaScript
-  | Python` variants; CLI names: `rust`/`rs`, `typescript`/`ts`,
-  `tsx`, `javascript`/`js`, `python`/`py`.
+- **Tree-sitter grammars** wired up for structural mode:
+  - Tier 1: TypeScript / TSX / JavaScript (with JSX) / Python
+  - Tier 2: Bash / Go
+  - Tier 3: JSON / Markdown
+  `Language` enum variants: `Rust | TypeScript | Tsx | JavaScript |
+  Python | Bash | Go | Json | Markdown`. CLI names accept the obvious
+  aliases (`ts`, `tsx`, `jsx`, `py`, `sh`, `golang`, `md`, …).
 - **Per-language cargo features.** `structural` feature is gone;
-  replaced by `lang-rust`, `lang-ts`, `lang-js`, `lang-python`, and
-  the convenience `lang-all`. At least one `lang-*` must be enabled
+  replaced by `lang-rust`, `lang-ts`, `lang-js`, `lang-python`,
+  `lang-bash`, `lang-go`, `lang-json`, `lang-md`, and the
+  convenience `lang-all`. At least one `lang-*` must be enabled
   for structural mode to compile. The `recast` binary defaults to
   `["script", "lang-all"]` so `cargo install --path crates/recast`
   still gets the full surface; users can opt out with

@@ -109,6 +109,59 @@ fn javascript_rename_identifier() {
     assert_eq!(out.matches, 2);
 }
 
+#[cfg(feature = "lang-bash")]
+#[test]
+fn bash_rename_identifier() {
+    let source = "old_var=1\necho $old_var\n";
+    let out = structural_rewrite(
+        Language::Bash,
+        source,
+        r#"((variable_name) @id (#eq? @id "old_var"))"#,
+        "new_var",
+    )
+    .unwrap();
+    assert!(out.text.contains("new_var=1"));
+    assert!(out.text.contains("$new_var"));
+}
+
+#[cfg(feature = "lang-go")]
+#[test]
+fn go_rename_function() {
+    let source = "package main\n\nfunc oldFn() int { return 1 }\n\nfunc main() { oldFn() }\n";
+    let out = structural_rewrite(
+        Language::Go,
+        source,
+        r#"((identifier) @id (#eq? @id "oldFn"))"#,
+        "newFn",
+    )
+    .unwrap();
+    assert!(out.text.contains("func newFn"));
+    assert!(out.text.contains("newFn()"));
+}
+
+#[cfg(feature = "lang-json")]
+#[test]
+fn json_rename_string_value() {
+    let source = r#"{"name": "old", "kind": "thing"}"#;
+    let out = structural_rewrite(
+        Language::Json,
+        source,
+        r#"((string_content) @s (#eq? @s "old"))"#,
+        "new",
+    )
+    .unwrap();
+    assert_eq!(out.text, r#"{"name": "new", "kind": "thing"}"#);
+}
+
+#[cfg(feature = "lang-md")]
+#[test]
+fn markdown_rewrite_inline_text() {
+    let source = "# Hello\n\nThis is foo. Replace foo.\n";
+    let out =
+        structural_rewrite(Language::Markdown, source, r#"((inline) @line)"#, "REPLACED").unwrap();
+    assert!(out.matches >= 1);
+}
+
 #[cfg(feature = "lang-python")]
 #[test]
 fn python_rename_function() {
