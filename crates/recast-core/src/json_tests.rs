@@ -124,6 +124,6 @@ fn error_kind_covers_every_error_variant() {
         ),
     ];
     for (err, expected) in cases {
-        assert_eq!(error_kind(&err), expected, "wrong ErrorKind for {err:?}");
+        assert_eq!(err.kind(), expected, "wrong ErrorKind for {err:?}");
     }
 }

@@ -1,8 +1,10 @@
 //! Typed errors returned by the planner, walker, and commit phases.
 //!
-//! [`Error`] is the single source of truth for failure shapes; the
-//! [`crate::json::ErrorKind`] discriminator (under the `serde` feature)
-//! tags each variant for machine consumption.
+//! [`Error`] is the single source of truth for failure shapes;
+//! [`ErrorKind`] is the machine-readable discriminator that tags each
+//! variant for JSON output. The mapping lives here so adding an
+//! [`Error`] variant without extending [`ErrorKind`] is a compile
+//! error rather than a runtime mis-tag.
 
 use std::path::{Path, PathBuf};
 
@@ -65,6 +67,59 @@ pub enum Error {
 
     #[error("failed to build worker thread pool: {0}")]
     ThreadPool(String),
+}
+
+/// Machine-readable tag for an [`Error`] variant. Stable across releases;
+/// every variant in [`Error`] has exactly one [`ErrorKind`] counterpart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum ErrorKind {
+    InvalidRegex,
+    InvalidGlob,
+    Walk,
+    Io,
+    FileTooLarge,
+    TooManyFiles,
+    NonConvergent,
+    TooFewMatches,
+    TooManyMatches,
+    ScriptParse,
+    ScriptRuntime,
+    UnknownLanguage,
+    StructuralQuery,
+    StructuralTemplate,
+    StructuralParse,
+    Locked,
+    InvalidThreads,
+    ThreadPool,
+}
+
+impl Error {
+    /// Tag for this variant. The match is exhaustive; adding a new
+    /// variant without extending [`ErrorKind`] is a compile error.
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            Error::InvalidRegex(_) => ErrorKind::InvalidRegex,
+            Error::InvalidGlob(_) => ErrorKind::InvalidGlob,
+            Error::Walk(_) => ErrorKind::Walk,
+            Error::Io { .. } => ErrorKind::Io,
+            Error::FileTooLarge { .. } => ErrorKind::FileTooLarge,
+            Error::TooManyFiles { .. } => ErrorKind::TooManyFiles,
+            Error::NonConvergent { .. } => ErrorKind::NonConvergent,
+            Error::TooFewMatches { .. } => ErrorKind::TooFewMatches,
+            Error::TooManyMatches { .. } => ErrorKind::TooManyMatches,
+            Error::ScriptParse(_) => ErrorKind::ScriptParse,
+            Error::ScriptRuntime(_) => ErrorKind::ScriptRuntime,
+            Error::UnknownLanguage(_) => ErrorKind::UnknownLanguage,
+            Error::StructuralQuery(_) => ErrorKind::StructuralQuery,
+            Error::StructuralTemplate(_) => ErrorKind::StructuralTemplate,
+            Error::StructuralParse => ErrorKind::StructuralParse,
+            Error::Locked { .. } => ErrorKind::Locked,
+            Error::InvalidThreads => ErrorKind::InvalidThreads,
+            Error::ThreadPool(_) => ErrorKind::ThreadPool,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

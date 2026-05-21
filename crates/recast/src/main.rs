@@ -327,7 +327,7 @@ fn run(cli: Cli) -> Result<u8> {
 }
 
 fn resolve_lang(name: &str) -> Result<Language> {
-    Language::from_name(name).ok_or_else(|| anyhow!("unknown language `{name}`"))
+    Language::from_name(name).map_err(anyhow::Error::from)
 }
 
 fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {

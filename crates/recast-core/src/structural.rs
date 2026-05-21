@@ -49,29 +49,29 @@ pub enum Language {
 
 impl Language {
     /// Resolve a CLI-friendly name (case-insensitive) to a language.
-    /// Returns `None` for languages whose `lang-*` feature wasn't
-    /// compiled in.
-    pub fn from_name(name: &str) -> Option<Self> {
+    /// Returns [`Error::UnknownLanguage`] for names that aren't
+    /// recognized or whose `lang-*` feature wasn't compiled in.
+    pub fn from_name(name: &str) -> Result<Self> {
         match name.to_ascii_lowercase().as_str() {
             #[cfg(feature = "lang-rust")]
-            "rust" | "rs" => Some(Language::Rust),
+            "rust" | "rs" => Ok(Language::Rust),
             #[cfg(feature = "lang-ts")]
-            "typescript" | "ts" => Some(Language::TypeScript),
+            "typescript" | "ts" => Ok(Language::TypeScript),
             #[cfg(feature = "lang-ts")]
-            "tsx" => Some(Language::Tsx),
+            "tsx" => Ok(Language::Tsx),
             #[cfg(feature = "lang-js")]
-            "javascript" | "js" | "jsx" => Some(Language::JavaScript),
+            "javascript" | "js" | "jsx" => Ok(Language::JavaScript),
             #[cfg(feature = "lang-python")]
-            "python" | "py" => Some(Language::Python),
+            "python" | "py" => Ok(Language::Python),
             #[cfg(feature = "lang-bash")]
-            "bash" | "sh" | "shell" => Some(Language::Bash),
+            "bash" | "sh" | "shell" => Ok(Language::Bash),
             #[cfg(feature = "lang-go")]
-            "go" | "golang" => Some(Language::Go),
+            "go" | "golang" => Ok(Language::Go),
             #[cfg(feature = "lang-json")]
-            "json" => Some(Language::Json),
+            "json" => Ok(Language::Json),
             #[cfg(feature = "lang-md")]
-            "markdown" | "md" => Some(Language::Markdown),
-            _ => None,
+            "markdown" | "md" => Ok(Language::Markdown),
+            _ => Err(Error::UnknownLanguage(name.to_owned())),
         }
     }
 

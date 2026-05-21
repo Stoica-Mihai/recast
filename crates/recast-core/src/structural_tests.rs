@@ -100,9 +100,9 @@ fn overlapping_matches_are_skipped() {
 
 #[test]
 fn language_from_name_parses_rust() {
-    assert!(matches!(Language::from_name("rust"), Some(Language::Rust)));
-    assert!(matches!(Language::from_name("Rust"), Some(Language::Rust)));
-    assert!(Language::from_name("zzz").is_none());
+    assert!(matches!(Language::from_name("rust"), Ok(Language::Rust)));
+    assert!(matches!(Language::from_name("Rust"), Ok(Language::Rust)));
+    assert!(matches!(Language::from_name("zzz"), Err(Error::UnknownLanguage(_))));
 }
 
 #[cfg(feature = "lang-ts")]

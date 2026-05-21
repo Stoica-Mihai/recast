@@ -1,6 +1,5 @@
 ---
 source: crates/recast-core/src/json_tests.rs
-assertion_line: 75
 expression: from_check(&already_applied_plan()).to_line().unwrap()
 ---
-{"kind":"check","outcome":"already_applied","files_scanned":5,"files_would_change":0,"total_matches":0}
+{"kind":"check","outcome":"already_applied","files_scanned":5,"total_matches":0,"files_would_change":0}

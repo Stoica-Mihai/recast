@@ -1,6 +1,5 @@
 ---
 source: crates/recast-core/src/json_tests.rs
-assertion_line: 46
 expression: from_plan(&changes_plan()).to_line().unwrap()
 ---
-{"kind":"plan","outcome":"changes","files_scanned":5,"files_changed":2,"total_matches":3,"changes":[{"path":"src/a.rs","matches":2},{"path":"src/b.rs","matches":1}]}
+{"kind":"plan","outcome":"changes","files_scanned":5,"total_matches":3,"files_changed":2,"changes":[{"path":"src/a.rs","matches":2},{"path":"src/b.rs","matches":1}]}
