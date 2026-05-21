@@ -192,6 +192,56 @@ fn script_mode_stdin_increments_number() {
 }
 
 #[test]
+fn structural_mode_renames_function_via_tree_sitter() {
+    let dir = fixture(&[("lib.rs", "fn old_fn() {}\nfn other() { old_fn(); }\n")]);
+    recast()
+        .arg("--lang")
+        .arg("rust")
+        .arg("--query")
+        .arg(r#"((identifier) @id (#eq? @id "old_fn"))"#)
+        .arg("--apply")
+        .arg("ignored")
+        .arg("new_fn")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("lib.rs")).unwrap(),
+        "fn new_fn() {}\nfn other() { new_fn(); }\n"
+    );
+}
+
+#[test]
+fn structural_mode_stdin_uses_capture_template() {
+    recast()
+        .arg("--lang")
+        .arg("rust")
+        .arg("--query")
+        .arg(r#"(function_item name: (identifier) @name) @root"#)
+        .arg("--stdin")
+        .arg("ignored")
+        .arg("fn ${name}_v2() {}")
+        .write_stdin("fn foo() {}\n")
+        .assert()
+        .success()
+        .stdout("fn foo_v2() {}\n");
+}
+
+#[test]
+fn structural_mode_unknown_language_errors() {
+    recast()
+        .arg("--lang")
+        .arg("klingon")
+        .arg("--query")
+        .arg("(identifier) @id")
+        .arg("pat")
+        .arg("rep")
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("unknown language"));
+}
+
+#[test]
 fn completions_flag_outputs_shell_script() {
     recast()
         .arg("--completions")

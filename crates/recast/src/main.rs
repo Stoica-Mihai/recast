@@ -8,9 +8,9 @@ use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
-    CompiledPattern, Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome,
+    CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
     ScriptRewriter, WalkOptions, apply_changes, build_pool, json, plan_rewrite,
-    plan_rewrite_scripted, rewrite_text, rewrite_text_scripted,
+    plan_rewrite_scripted, rewrite_text, rewrite_text_scripted, structural_rewrite,
 };
 
 const EXIT_OK: u8 = 0;
@@ -134,6 +134,19 @@ pub(crate) struct Cli {
     #[arg(long, value_name = "PATH")]
     script: Option<PathBuf>,
 
+    /// Structural mode: tree-sitter language to parse with. Requires
+    /// `--query`. In this mode the positional PATTERN is ignored;
+    /// REPLACEMENT is used as the template (with `$name` / `${name}`
+    /// capture substitutions). Currently supported: `rust`.
+    #[arg(long, value_name = "LANG", requires = "query")]
+    lang: Option<String>,
+
+    /// Tree-sitter S-expression query (structural mode). The capture
+    /// named `@root` (or, absent that, the outermost capture in each
+    /// match) defines the byte range to replace.
+    #[arg(long, value_name = "QUERY", requires = "lang")]
+    query: Option<String>,
+
     /// Generate a shell completion script and exit.
     #[arg(long, value_name = "SHELL", value_enum)]
     completions: Option<Shell>,
@@ -196,6 +209,15 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
+    if let Some(lang_name) = &cli.lang {
+        let query = cli.query.as_deref().ok_or_else(|| anyhow!("--query required with --lang"))?;
+        let template = cli
+            .replacement
+            .as_deref()
+            .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
+        return run_structural(&cli, lang_name, query, template);
+    }
+
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
     let replacement = cli.replacement.as_deref().ok_or_else(|| anyhow!("replacement required"))?;
 
@@ -244,6 +266,98 @@ fn run(cli: Cli) -> Result<u8> {
     }
 
     emit_diff(&cli, &plan).context("emit diff output")?;
+    Ok(EXIT_OK)
+}
+
+fn run_structural(cli: &Cli, lang_name: &str, query: &str, template: &str) -> Result<u8> {
+    let lang =
+        Language::from_name(lang_name).ok_or_else(|| anyhow!("unknown language `{lang_name}`"))?;
+
+    if cli.stdin {
+        let mut buf = String::new();
+        io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
+        let outcome = match structural_rewrite(lang, &buf, query, template) {
+            Ok(o) => o,
+            Err(e) => return Ok(handle_plan_error(e, cli.json)),
+        };
+        if let Some(min) = cli.at_least.or(Some(1))
+            && outcome.matches < min
+        {
+            eprintln!(
+                "recast: match-count guard violated: found {}, required at least {}",
+                outcome.matches, min
+            );
+            return Ok(EXIT_GUARD_VIOLATED);
+        }
+        io::stdout().lock().write_all(outcome.text.as_bytes()).context("write stdout")?;
+        return Ok(EXIT_OK);
+    }
+
+    let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
+    let walk_opts = cli.plan_options().walk_options;
+    let files = recast_core::walk_paths(&paths, &walk_opts).context("walk paths")?;
+
+    let mut total_matches = 0usize;
+    let mut files_changed: Vec<(PathBuf, String, String, usize)> = Vec::new();
+    for path in &files {
+        let before = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => continue,
+            Err(e) => return Err(e).context(format!("read {}", path.display())),
+        };
+        let outcome = match structural_rewrite(lang, &before, query, template) {
+            Ok(o) => o,
+            Err(e) => return Ok(handle_plan_error(e, cli.json)),
+        };
+        if outcome.text == before {
+            continue;
+        }
+        total_matches += outcome.matches;
+        files_changed.push((path.clone(), before, outcome.text, outcome.matches));
+    }
+
+    if let Some(min) = cli.at_least.or(Some(1))
+        && total_matches < min
+    {
+        return Ok(handle_plan_error(
+            CoreError::TooFewMatches { found: total_matches, required: min },
+            cli.json,
+        ));
+    }
+
+    if cli.check {
+        if cli.json {
+            println!(
+                r#"{{"kind":"check","outcome":"changes","files_scanned":{},"files_would_change":{},"total_matches":{}}}"#,
+                files.len(),
+                files_changed.len(),
+                total_matches
+            );
+        }
+        return Ok(if files_changed.is_empty() { EXIT_OK } else { EXIT_CHECK_WOULD_CHANGE });
+    }
+
+    if cli.apply {
+        for (path, _before, after, _matches) in &files_changed {
+            std::fs::write(path, after).context(format!("write {}", path.display()))?;
+        }
+        eprintln!("recast: applying {} file(s), {} match(es).", files_changed.len(), total_matches);
+        return Ok(EXIT_OK);
+    }
+
+    let mut stdout = io::stdout().lock();
+    for (path, before, after, _matches) in &files_changed {
+        let label = recast_core::label_for_path(path);
+        let diff = recast_core::unified_diff(&label, before, after);
+        stdout.write_all(diff.as_bytes())?;
+    }
+    writeln!(
+        stdout,
+        "recast: {} file(s) would change, {} match(es) across {} scanned.",
+        files_changed.len(),
+        total_matches,
+        files.len()
+    )?;
     Ok(EXIT_OK)
 }
 
