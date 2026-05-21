@@ -9,7 +9,7 @@ use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
     Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome, WalkOptions, apply_changes,
-    json, plan_rewrite,
+    build_pool, json, plan_rewrite,
 };
 
 const EXIT_OK: u8 = 0;
@@ -114,6 +114,10 @@ pub(crate) struct Cli {
     #[arg(short = 'v', long, action = ArgAction::SetTrue)]
     verbose: bool,
 
+    /// Worker threads (default = num CPUs).
+    #[arg(long, value_name = "N")]
+    threads: Option<usize>,
+
     /// Generate a shell completion script and exit.
     #[arg(long, value_name = "SHELL", value_enum)]
     completions: Option<Shell>,
@@ -176,8 +180,9 @@ fn run(cli: Cli) -> Result<u8> {
     let opts = cli.plan_options();
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
     let replacement = cli.replacement.as_deref().ok_or_else(|| anyhow!("replacement required"))?;
+    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
 
-    let plan = match plan_rewrite(pattern, replacement, &paths, &opts) {
+    let plan = match pool.install(|| plan_rewrite(pattern, replacement, &paths, &opts)) {
         Ok(plan) => plan,
         Err(err) => return Ok(handle_plan_error(err, cli.json)),
     };
