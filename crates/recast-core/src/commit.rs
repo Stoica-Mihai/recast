@@ -55,11 +55,12 @@ pub fn apply_changes(plan: &Plan) -> Result<ApplyOutcome> {
         return Ok(ApplyOutcome { files_written: 0, total_matches: plan.total_matches });
     }
 
+    let nonces = NonceGen::new();
     debug!(files = plan.changes.len(), "apply: stage phase begin");
-    let staged = stage_all(&plan.changes)?;
+    let staged = stage_all(&plan.changes, &nonces)?;
     debug!(files = staged.len(), "apply: stage phase complete");
 
-    finalize_apply(plan, &staged, commit_all(&staged))
+    finalize_apply(plan, &staged, commit_all(&staged, &nonces))
 }
 
 fn finalize_apply(
@@ -101,15 +102,16 @@ where
     if plan.changes.is_empty() {
         return Ok(ApplyOutcome { files_written: 0, total_matches: plan.total_matches });
     }
-    let staged = stage_all(&plan.changes)?;
-    finalize_apply(plan, &staged, commit_all_with_hook(&staged, &between_commits))
+    let nonces = NonceGen::new();
+    let staged = stage_all(&plan.changes, &nonces)?;
+    finalize_apply(plan, &staged, commit_all_with_hook(&staged, &nonces, &between_commits))
 }
 
-fn stage_all(changes: &[FileChange]) -> Result<Vec<Staged>> {
+fn stage_all(changes: &[FileChange], nonces: &NonceGen) -> Result<Vec<Staged>> {
     // Per-file stage is dominated by `sync_all` on the temp file, which
     // the kernel can overlap across workers. Commit phase stays serial
     // so rollback ordering remains deterministic.
-    let results: Vec<Result<Staged>> = changes.par_iter().map(stage_one).collect();
+    let results: Vec<Result<Staged>> = changes.par_iter().map(|c| stage_one(c, nonces)).collect();
 
     let mut staged: Vec<Staged> = Vec::with_capacity(results.len());
     let mut first_error: Option<Error> = None;
@@ -132,12 +134,12 @@ fn stage_all(changes: &[FileChange]) -> Result<Vec<Staged>> {
     Ok(staged)
 }
 
-fn stage_one(change: &FileChange) -> Result<Staged> {
+fn stage_one(change: &FileChange, nonces: &NonceGen) -> Result<Staged> {
     let parent = parent_dir(&change.path)?;
 
     let permissions = fs::metadata(&change.path).map(|m| m.permissions()).ok();
 
-    let temp_name = sibling_temp_name(&change.path, SiblingKind::Temp);
+    let temp_name = sibling_temp_name(&change.path, SiblingKind::Temp, nonces);
     let temp_path = parent.join(&temp_name);
 
     let mut file =
@@ -170,10 +172,13 @@ struct CommitFailure {
     error: Error,
 }
 
-fn commit_all(staged: &[Staged]) -> std::result::Result<Vec<Committed>, CommitFailure> {
+fn commit_all(
+    staged: &[Staged],
+    nonces: &NonceGen,
+) -> std::result::Result<Vec<Committed>, CommitFailure> {
     let mut committed: Vec<Committed> = Vec::with_capacity(staged.len());
     for (i, s) in staged.iter().enumerate() {
-        match commit_one(s) {
+        match commit_one(s, nonces) {
             Ok(c) => committed.push(c),
             Err(error) => {
                 return Err(CommitFailure { committed, remaining_staged: staged.len() - i, error });
@@ -186,6 +191,7 @@ fn commit_all(staged: &[Staged]) -> std::result::Result<Vec<Committed>, CommitFa
 #[cfg(test)]
 fn commit_all_with_hook<F>(
     staged: &[Staged],
+    nonces: &NonceGen,
     between_commits: &F,
 ) -> std::result::Result<Vec<Committed>, CommitFailure>
 where
@@ -193,7 +199,7 @@ where
 {
     let mut committed: Vec<Committed> = Vec::with_capacity(staged.len());
     for (i, s) in staged.iter().enumerate() {
-        match commit_one(s) {
+        match commit_one(s, nonces) {
             Ok(c) => committed.push(c),
             Err(error) => {
                 return Err(CommitFailure { committed, remaining_staged: staged.len() - i, error });
@@ -206,9 +212,9 @@ where
     Ok(committed)
 }
 
-fn commit_one(staged: &Staged) -> Result<Committed> {
+fn commit_one(staged: &Staged, nonces: &NonceGen) -> Result<Committed> {
     trace!(target = %staged.target.display(), "commit: rename");
-    let backup_name = sibling_temp_name(&staged.target, SiblingKind::Backup);
+    let backup_name = sibling_temp_name(&staged.target, SiblingKind::Backup, nonces);
     let backup_path = parent_dir(&staged.target)?.join(&backup_name);
 
     fs::rename(&staged.target, &backup_path).io_ctx(&staged.target)?;
@@ -391,19 +397,38 @@ fn parse_sibling_name(name: &str) -> Option<(String, SiblingKind, u64)> {
     Some((target.to_owned(), kind, nonce))
 }
 
-fn sibling_temp_name(target: &Path, kind: SiblingKind) -> String {
+fn sibling_temp_name(target: &Path, kind: SiblingKind, nonces: &NonceGen) -> String {
     let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let nonce = nonce();
+    let nonce = nonces.next();
     format!(".{name}.recast.{token}.{nonce}", token = kind.as_str())
 }
 
-fn nonce() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    ts.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(n)
+/// Per-apply nonce generator for `.recast.{kind}.{nonce}` sibling
+/// filenames. Mixes the current epoch nanoseconds with a monotonically-
+/// incremented counter so siblings from concurrent stage workers don't
+/// collide and a single apply can produce thousands of unique names.
+///
+/// One instance per [`apply_changes`] / [`recover_sweep`] (writer) call
+/// — passed by reference into the stage + commit phases so the counter
+/// is scoped to the apply that owns it instead of living in static
+/// mutable state.
+struct NonceGen {
+    counter: std::sync::atomic::AtomicU64,
+}
+
+impl NonceGen {
+    fn new() -> Self {
+        Self { counter: std::sync::atomic::AtomicU64::new(0) }
+    }
+
+    fn next(&self) -> u64 {
+        use std::sync::atomic::Ordering;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts =
+            SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
+        let n = self.counter.fetch_add(1, Ordering::Relaxed);
+        ts.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(n)
+    }
 }
 
 #[cfg(test)]
