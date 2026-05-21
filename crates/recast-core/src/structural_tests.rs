@@ -52,6 +52,34 @@ fn invalid_query_returns_query_error() {
 }
 
 #[test]
+fn query_error_includes_line_column_and_caret() {
+    let err = structural_rewrite(
+        Language::Rust,
+        "fn foo() {}",
+        "(not_a_real_node_kind) @x",
+        "irrelevant",
+    )
+    .unwrap_err();
+    let Error::StructuralQuery(msg) = err else { panic!("wrong error variant: {err:?}") };
+    assert!(msg.contains("line 1"), "no line info: {msg}");
+    assert!(msg.contains("column"), "no column info: {msg}");
+    assert!(msg.contains("^"), "no caret: {msg}");
+    assert!(
+        msg.contains("not_a_real_node_kind") || msg.contains("unknown node type"),
+        "no useful detail: {msg}"
+    );
+}
+
+#[test]
+fn unparseable_ast_pattern_mentions_substitution() {
+    let err =
+        structural_rewrite_friendly(Language::Rust, "fn foo() {}", "fn $$$ broken", "irrelevant")
+            .unwrap_err();
+    let Error::StructuralQuery(msg) = err else { panic!("wrong error variant: {err:?}") };
+    assert!(msg.contains("`--ast` pattern"), "no --ast hint: {msg}");
+}
+
+#[test]
 fn no_matches_returns_unchanged_source() {
     let source = "fn foo() {}";
     let out =

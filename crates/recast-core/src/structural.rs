@@ -115,8 +115,8 @@ pub fn structural_rewrite(
     parser.set_language(&ts_lang).map_err(|e| Error::StructuralQuery(e.to_string()))?;
 
     let tree = parser.parse(source, None).ok_or(Error::StructuralParse)?;
-    let query =
-        Query::new(&ts_lang, query_src).map_err(|e| Error::StructuralQuery(e.to_string()))?;
+    let query = Query::new(&ts_lang, query_src)
+        .map_err(|e| Error::StructuralQuery(format_query_error(query_src, &e)))?;
     let capture_names: Vec<&str> = query.capture_names().to_vec();
     let root_capture_idx = capture_names.iter().position(|n| *n == "root");
 
@@ -265,14 +265,20 @@ fn compile_friendly_pattern(lang: Language, pattern: &str) -> Result<String> {
     let ts_lang = lang.ts_language();
     let mut parser = Parser::new();
     parser.set_language(&ts_lang).map_err(|e| Error::StructuralQuery(e.to_string()))?;
-    let tree = parser
-        .parse(&substituted, None)
-        .ok_or_else(|| Error::StructuralQuery("could not parse friendly pattern".into()))?;
+    let tree = parser.parse(&substituted, None).ok_or_else(|| {
+        Error::StructuralQuery(format!(
+            "could not parse `--ast` pattern with the requested grammar; check that the pattern is valid {} syntax with `$NAME` / `$$$NAME` metavars in node positions",
+            ts_lang.name().unwrap_or("source")
+        ))
+    })?;
     let root = tree.root_node();
     if root.has_error() {
+        let snippet = pattern.lines().next().unwrap_or(pattern);
         return Err(Error::StructuralQuery(format!(
-            "friendly pattern has parse errors (after metavar substitution): {}",
-            root.to_sexp()
+            "`--ast` pattern is not valid {} source after metavar substitution: `{snippet}`. \
+             Metavars (`$NAME`, `$$$NAME`) can only appear where an identifier-like token is \
+             legal in the target language.",
+            ts_lang.name().unwrap_or("source")
         )));
     }
     // Tree-sitter wraps top-level items in a `source_file` (or similar)
@@ -386,6 +392,31 @@ fn emit_node(
         emit_node(buf, predicates, lit_counter, child, src);
     }
     buf.push(')');
+}
+
+/// Render a tree-sitter `QueryError` with the offending fragment and a
+/// caret pointing at the byte offset, so callers see something useful
+/// instead of the raw `QueryError { row, column, offset, kind, message }`
+/// Debug output.
+fn format_query_error(query_src: &str, err: &tree_sitter::QueryError) -> String {
+    let kind = match err.kind {
+        tree_sitter::QueryErrorKind::Syntax => "syntax",
+        tree_sitter::QueryErrorKind::NodeType => "unknown node type",
+        tree_sitter::QueryErrorKind::Field => "unknown field",
+        tree_sitter::QueryErrorKind::Capture => "unknown capture",
+        tree_sitter::QueryErrorKind::Predicate => "bad predicate",
+        tree_sitter::QueryErrorKind::Structure => "structural mismatch",
+        tree_sitter::QueryErrorKind::Language => "language mismatch",
+    };
+    let line = query_src.lines().nth(err.row).unwrap_or("");
+    let caret_col = err.column.min(line.len());
+    let caret = format!("{}^", " ".repeat(caret_col));
+    let msg = err.message.trim();
+    format!(
+        "tree-sitter query {kind} error at line {row}, column {col}: {msg}\n  | {line}\n  | {caret}",
+        row = err.row + 1,
+        col = err.column + 1,
+    )
 }
 
 fn escape_query_string(s: &str) -> String {
