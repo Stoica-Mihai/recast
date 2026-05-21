@@ -130,6 +130,7 @@ CI must run `fmt --check`, `clippy -D warnings`, and `test --workspace --all-fea
 - **No bypassing hooks.** Never `--no-verify` without explicit instruction.
 - **No backwards-compat shims pre-1.0.** Break freely until a 1.0 release exists.
 - **Verify before claiming done.** Run the relevant tests. Re-read the diff. Report results, not intentions.
+- **Commit immediately after each landed feature.** Once `fmt --check` / `clippy -D warnings` / `test --workspace` pass on a scoped change, create the commit without waiting for further approval. Do not batch multiple features into one approval gate. Pushing remains opt-in.
 - **Update `PLAN.md` when deviating.** The plan is living. Drift without a doc update is a bug.
 
 ## 12. Lineage and references
