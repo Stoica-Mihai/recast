@@ -586,16 +586,16 @@ fn emit_node(
                 buf.push_str(" (");
                 buf.push_str(node.kind());
                 stack.push(Frame::Close);
-                // Collect children up front so we can push them in reverse,
-                // making the LIFO stack visit them in source order.
-                let mut cursor = node.walk();
-                let mut children: Vec<Frame<'_>> = Vec::new();
-                for (idx, child) in node.named_children(&mut cursor).enumerate() {
-                    let field = node.field_name_for_named_child(idx as u32);
-                    children.push(Frame::Open { node: child, field });
-                }
-                for child in children.into_iter().rev() {
-                    stack.push(child);
+                // Push children in reverse so the LIFO stack visits them
+                // in source order. `named_child(i)` indexes the same set
+                // `named_children()` iterates, so the named-child index
+                // doubles as the argument to `field_name_for_named_child`.
+                let count = node.named_child_count();
+                for i in (0..count).rev() {
+                    if let Some(child) = node.named_child(i) {
+                        let field = node.field_name_for_named_child(i as u32);
+                        stack.push(Frame::Open { node: child, field });
+                    }
                 }
             }
         }
