@@ -14,14 +14,12 @@ fn sample_changes() -> Vec<FileChange> {
         FileChange {
             path: PathBuf::from("src/a.rs"),
             matches: 2,
-            before: String::new(),
             after: String::new(),
             diff: String::new(),
         },
         FileChange {
             path: PathBuf::from("src/b.rs"),
             matches: 1,
-            before: String::new(),
             after: String::new(),
             diff: String::new(),
         },

@@ -401,7 +401,6 @@ fn plan_one(
     Ok(Some(FileChange {
         path: path.to_path_buf(),
         matches: outcome.matches,
-        before,
         after: outcome.text,
         diff,
     }))

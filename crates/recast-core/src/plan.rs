@@ -59,15 +59,17 @@ impl Default for PlanOptions {
     }
 }
 
-/// One file's worth of pending rewrite work. `before` and `after` are
-/// the full pre- and post-images; `diff` is the unified-diff rendering.
+/// One file's worth of pending rewrite work. `after` is the full
+/// post-image used by [`crate::apply_changes`]; `diff` is the
+/// already-rendered unified-diff string. The pre-image is dropped
+/// after the diff is built — `apply_changes` reads from `after`, not
+/// from the original on disk, so retaining the pre-image would just
+/// double the planner's peak memory.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FileChange {
     pub path: PathBuf,
     pub matches: usize,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub before: String,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub after: String,
     pub diff: String,
@@ -272,7 +274,6 @@ where
     Ok(Some(FileChange {
         path: path.to_path_buf(),
         matches: outcome.matches,
-        before,
         after: outcome.after,
         diff,
     }))
