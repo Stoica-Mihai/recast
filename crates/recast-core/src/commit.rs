@@ -12,6 +12,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
 use tracing::{debug, trace};
 
 use crate::error::{Error, IoCtx, Result};
@@ -89,17 +90,28 @@ where
 }
 
 fn stage_all(changes: &[FileChange]) -> Result<Vec<Staged>> {
-    let mut staged: Vec<Staged> = Vec::with_capacity(changes.len());
-    for change in changes {
-        match stage_one(change) {
+    // Per-file stage is dominated by `sync_all` on the temp file, which
+    // the kernel can overlap across workers. Commit phase stays serial
+    // so rollback ordering remains deterministic.
+    let results: Vec<Result<Staged>> = changes.par_iter().map(stage_one).collect();
+
+    let mut staged: Vec<Staged> = Vec::with_capacity(results.len());
+    let mut first_error: Option<Error> = None;
+    for r in results {
+        match r {
             Ok(s) => staged.push(s),
             Err(e) => {
-                for s in &staged {
-                    let _ = fs::remove_file(&s.temp_path);
+                if first_error.is_none() {
+                    first_error = Some(e);
                 }
-                return Err(e);
             }
         }
+    }
+    if let Some(e) = first_error {
+        for s in &staged {
+            let _ = fs::remove_file(&s.temp_path);
+        }
+        return Err(e);
     }
     Ok(staged)
 }
