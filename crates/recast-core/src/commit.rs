@@ -137,7 +137,10 @@ fn stage_all(changes: &[FileChange], nonces: &NonceGen) -> Result<Vec<Staged>> {
 fn stage_one(change: &FileChange, nonces: &NonceGen) -> Result<Staged> {
     let parent = parent_dir(&change.path)?;
 
-    let permissions = fs::metadata(&change.path).map(|m| m.permissions()).ok();
+    // Permissions were captured by the planner alongside the file
+    // read; reuse them so the stage hot path doesn't do a second
+    // `fs::metadata` syscall per file.
+    let permissions = change.permissions.clone();
 
     let temp_name = sibling_temp_name(&change.path, SiblingKind::Temp, nonces);
     let temp_path = parent.join(&temp_name);

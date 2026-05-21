@@ -6,7 +6,7 @@
 //! touching the filesystem; pass the plan to
 //! [`crate::apply_changes`] to commit.
 
-use std::fs;
+use std::fs::{self, Permissions};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -64,7 +64,10 @@ impl Default for PlanOptions {
 /// already-rendered unified-diff string. The pre-image is dropped
 /// after the diff is built — `apply_changes` reads from `after`, not
 /// from the original on disk, so retaining the pre-image would just
-/// double the planner's peak memory.
+/// double the planner's peak memory. `permissions` is captured during
+/// the planner's metadata read so [`crate::apply_changes`] doesn't
+/// have to issue a second `fs::metadata` syscall just to preserve
+/// the mode bits.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FileChange {
@@ -73,6 +76,8 @@ pub struct FileChange {
     #[cfg_attr(feature = "serde", serde(skip))]
     pub after: String,
     pub diff: String,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub permissions: Option<Permissions>,
 }
 
 /// Top-level result classification for a [`Plan`].
@@ -251,8 +256,8 @@ where
     R: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
     C: Fn(&CompiledPattern, &str) -> Result<usize>,
 {
-    let before = match read_text_or_skip_binary(path, opts.max_bytes)? {
-        Some(s) => s,
+    let (before, permissions) = match read_text_or_skip_binary(path, opts.max_bytes)? {
+        Some(pair) => pair,
         None => return Ok(None),
     };
 
@@ -276,13 +281,19 @@ where
         matches: outcome.matches,
         after: outcome.after,
         diff,
+        permissions: Some(permissions),
     }))
 }
 
 /// Read a candidate file, enforce the per-file byte limit, and yield
 /// `None` for paths whose contents aren't valid UTF-8 (binary skip).
-/// Shared by the regex and structural pipelines.
-pub(crate) fn read_text_or_skip_binary(path: &Path, max_bytes: u64) -> Result<Option<String>> {
+/// Returns the file contents alongside the permissions captured from
+/// the same metadata call so the commit phase doesn't have to stat the
+/// file again. Shared by the regex and structural pipelines.
+pub(crate) fn read_text_or_skip_binary(
+    path: &Path,
+    max_bytes: u64,
+) -> Result<Option<(String, Permissions)>> {
     let metadata = fs::metadata(path).io_ctx(path)?;
     if metadata.len() > max_bytes {
         return Err(Error::FileTooLarge {
@@ -291,8 +302,9 @@ pub(crate) fn read_text_or_skip_binary(path: &Path, max_bytes: u64) -> Result<Op
             limit: max_bytes,
         });
     }
+    let permissions = metadata.permissions();
     match fs::read_to_string(path) {
-        Ok(s) => Ok(Some(s)),
+        Ok(s) => Ok(Some((s, permissions))),
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => Ok(None),
         Err(e) => Err(Error::Io { path: path.to_path_buf(), source: e }),
     }

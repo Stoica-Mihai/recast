@@ -388,8 +388,8 @@ fn plan_one(
     path: &Path,
     opts: &PlanOptions,
 ) -> Result<Option<FileChange>> {
-    let before = match read_text_or_skip_binary(path, opts.max_bytes)? {
-        Some(s) => s,
+    let (before, permissions) = match read_text_or_skip_binary(path, opts.max_bytes)? {
+        Some(pair) => pair,
         None => return Ok(None),
     };
     let outcome = compiled.apply(parser, cursor, &before)?;
@@ -403,6 +403,7 @@ fn plan_one(
         matches: outcome.matches,
         after: outcome.text,
         diff,
+        permissions: Some(permissions),
     }))
 }
 
