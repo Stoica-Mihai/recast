@@ -121,7 +121,7 @@ fn stage_one(change: &FileChange) -> Result<Staged> {
 
     let permissions = fs::metadata(&change.path).map(|m| m.permissions()).ok();
 
-    let temp_name = sibling_temp_name(&change.path, "tmp");
+    let temp_name = sibling_temp_name(&change.path, SiblingKind::Temp);
     let temp_path = parent.join(&temp_name);
 
     let mut file =
@@ -178,7 +178,7 @@ where
 
 fn commit_one(staged: &Staged) -> Result<Committed> {
     trace!(target = %staged.target.display(), "commit: rename");
-    let backup_name = sibling_temp_name(&staged.target, "bak");
+    let backup_name = sibling_temp_name(&staged.target, SiblingKind::Backup);
     let backup_path = parent_dir(&staged.target)?.join(&backup_name);
 
     fs::rename(&staged.target, &backup_path).io_ctx(&staged.target)?;
@@ -317,6 +317,26 @@ enum SiblingKind {
     Temp,
 }
 
+impl SiblingKind {
+    /// Filename token used in `.{target}.recast.{token}.{nonce}` sibling
+    /// names. Single source of truth for both emission
+    /// ([`sibling_temp_name`]) and parsing ([`parse_sibling_name`]).
+    fn as_str(self) -> &'static str {
+        match self {
+            SiblingKind::Backup => "bak",
+            SiblingKind::Temp => "tmp",
+        }
+    }
+
+    fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "bak" => Some(SiblingKind::Backup),
+            "tmp" => Some(SiblingKind::Temp),
+            _ => None,
+        }
+    }
+}
+
 fn parse_sibling_name(name: &str) -> Option<(String, SiblingKind, u64)> {
     let rest = name.strip_prefix('.')?;
     let idx_recast = rest.find(".recast.")?;
@@ -327,19 +347,15 @@ fn parse_sibling_name(name: &str) -> Option<(String, SiblingKind, u64)> {
     let suffix = suffix.strip_prefix(".recast.")?;
     let dot = suffix.find('.')?;
     let (kind_str, nonce_str) = suffix.split_at(dot);
-    let kind = match kind_str {
-        "bak" => SiblingKind::Backup,
-        "tmp" => SiblingKind::Temp,
-        _ => return None,
-    };
+    let kind = SiblingKind::from_token(kind_str)?;
     let nonce: u64 = nonce_str.strip_prefix('.')?.parse().ok()?;
     Some((target.to_owned(), kind, nonce))
 }
 
-fn sibling_temp_name(target: &Path, kind: &str) -> String {
+fn sibling_temp_name(target: &Path, kind: SiblingKind) -> String {
     let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let nonce = nonce();
-    format!(".{name}.recast.{kind}.{nonce}")
+    format!(".{name}.recast.{token}.{nonce}", token = kind.as_str())
 }
 
 fn nonce() -> u64 {
