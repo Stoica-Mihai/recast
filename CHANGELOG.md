@@ -34,6 +34,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 - `--completions <shell>` — bash, zsh, fish, elvish, powershell.
 - `--stdin` — read input from stdin, rewrite once, write to stdout.
   Skips the walker and commit phases for one-shot pipelines.
+- **Phase 5 scripted replacements** — feature-gated `script` flag
+  pulls in `rhai`. `recast --script foo.rhai 'pattern' '' paths/`
+  runs the script per regex match; the return value becomes the
+  replacement. Script sees `captures` (array; index 0 is the full
+  match) and `whole` (full-match alias, since `match` is a Rhai
+  reserved keyword). Sandbox caps: 1M operations, 1 MiB strings,
+  1024 array entries, expression depth 64. Available in `--stdin`
+  too. Scripted scans run sequentially (rhai engine isn't `Sync`).
 - Tracing spans via `tracing` at `DEBUG` (phase markers) and `TRACE`
   (per-file events). `RUST_LOG=debug` surfaces them.
 - Public-API rustdoc on every exported item; a `docs` CI job runs
