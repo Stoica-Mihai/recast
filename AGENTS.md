@@ -108,7 +108,7 @@ CI must run `fmt --check`, `clippy -D warnings`, and `test --workspace --all-fea
 - Errors: `thiserror` enums per library crate; `anyhow::Result` only at binary boundaries.
 - No global mutable state.
 - No `lazy_static!` / `once_cell` for configuration. Configuration flows in via constructor or argument.
-- Tests: colocated unit tests (`#[cfg(test)] mod tests`), integration tests under `tests/`. Snapshot tests via `insta` for diff output.
+- Tests live in their own files, never in the implementation file. For unit tests of `src/foo.rs`, write `src/foo_tests.rs` and reference it from `foo.rs` via `#[cfg(test)] #[path = "foo_tests.rs"] mod tests;`. Integration tests live under `tests/`. Snapshot tests via `insta` for diff output.
 
 ## 10. Comments and documentation
 
@@ -129,6 +129,7 @@ CI must run `fmt --check`, `clippy -D warnings`, and `test --workspace --all-fea
 - **Destructive git operations require explicit human approval.** `reset --hard`, `push --force`, `branch -D`.
 - **No bypassing hooks.** Never `--no-verify` without explicit instruction.
 - **No backwards-compat shims pre-1.0.** Break freely until a 1.0 release exists.
+- **TDD by default.** Every feature, bug fix, or behavioral change goes through the `/tdd:tdd` skill: write the failing test first, watch it fail, then write the minimum implementation that makes it pass. No production code without a red test first. Scaffolding, doc tweaks, and pure refactors of already-tested code are exempt.
 - **Verify before claiming done.** Run the relevant tests. Re-read the diff. Report results, not intentions.
 - **Commit immediately after each landed feature.** Once `fmt --check` / `clippy -D warnings` / `test --workspace` pass on a scoped change, create the commit without waiting for further approval. Do not batch multiple features into one approval gate. Pushing remains opt-in.
 - **Update `PLAN.md` when deviating.** The plan is living. Drift without a doc update is a bug.
