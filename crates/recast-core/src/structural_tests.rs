@@ -292,13 +292,9 @@ fn ast_pattern_preserves_non_ascii_literal_bytes() {
     // non-ASCII codepoint in an `--ast` pattern must survive the
     // metavar-substitution preprocess intact.
     let source = "// é\nfn foo() {}";
-    let out = structural_rewrite_friendly(
-        Language::Rust,
-        source,
-        "fn $NAME() {}",
-        "fn ${NAME}_é() {}",
-    )
-    .unwrap();
+    let out =
+        structural_rewrite_friendly(Language::Rust, source, "fn $NAME() {}", "fn ${NAME}_é() {}")
+            .unwrap();
     assert_eq!(out.text, "// é\nfn foo_é() {}");
     assert_eq!(out.matches, 1);
 }

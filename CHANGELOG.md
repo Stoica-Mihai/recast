@@ -8,7 +8,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 ## [Unreleased]
 
 Post-`0.1.7` follow-through: residual cleanup-pass items + a CI
-deprecation fix flagged by the 0.1.7 release run.
+deprecation fix flagged by the 0.1.7 release run, plus a deep
+correctness/durability audit pass over `commit`, `structural`, and
+the CLI dispatch layer.
 
 ### Changed
 
@@ -16,18 +18,34 @@ deprecation fix flagged by the 0.1.7 release run.
   `pub(crate)` so the rollback test could inject a mid-commit
   failure; that leaked the test-only seam into the production API.
   Production `apply_changes` and `commit_all` carry no hook
-  references; `apply_inner` + `commit_all_with_hook` exist only
-  under `cfg(test)`. The two paths share a `finalize_apply` helper.
+  references; `apply_inner` + `commit_all_with` exist only under
+  `cfg(test)`. The two paths share a `finalize_apply` helper, and
+  `commit_all` now delegates to a single `commit_all_with` impl with
+  a no-op hook closure instead of duplicating the loop body.
 - **Per-apply `NonceGen`** replaces the static `AtomicU64` counter
   inside `fn nonce()`. The struct is constructed once per
   `apply_changes` call and threaded by reference through stage and
   commit phases; sibling-filename uniqueness across rayon workers
   is unchanged, but the state is scoped to the invocation instead
   of living in static mutable memory.
+- **`NonceGen::new` samples `SystemTime::now()` once** and stores
+  it as a precomputed mix seed. The previous shape sampled the
+  clock inside every `next()` call, so a 1k-file apply did 1k extra
+  syscalls just to disambiguate sibling filenames.
 - **`emit_diff` / `emit_apply` narrowed** from `&Cli` to
   `&OutputOptions, &Plan`. Dropped the transitive dependency on
   GuardOptions and StructuralCli substructs that those helpers
   never touched.
+- **`--threads N` honored across the whole pipeline.** Previously
+  only the regex planner ran inside the user-scoped rayon pool;
+  scripted-plan, structural-plan, and the commit/stage phase all
+  fell back to the global pool. The CLI now installs the pool once
+  and wraps every parallel phase, regardless of mode.
+- **Primary capture fallback in `structural::apply` is deterministic.**
+  When a query lacks an explicit `@root`, the apply phase now picks
+  the outermost-by-byte-range capture (smallest start, then largest
+  end, then lowest capture index) instead of "the capture with the
+  largest index", which was declaration-order dependent.
 
 ### Fixed
 
@@ -36,6 +54,37 @@ deprecation fix flagged by the 0.1.7 release run.
   `path.parent()` returned None, silently bucketing unrelated
   parentless siblings together. Skip with a `trace!` line instead
   so recovery never makes cross-target decisions.
+- **`recover_sweep` aggregates per-group errors** instead of
+  bailing on the first failure. The user invokes `--recover`
+  precisely when the tree is in a partial state; aborting at the
+  first bad group left the rest unreconciled. All groups are
+  attempted; the first error is propagated after the sweep so the
+  exit code still reflects failure.
+- **`structural::compile_friendly_query` passes child index, not
+  node id, to `field_name_for_named_child`.** Was calling
+  `field_name_for_child(child.id() as u32)`, conflating the
+  pointer-derived opaque identifier with the positional child
+  index. Generated `--ast` queries could silently drop / mis-name
+  field annotations as a result.
+- **UTF-8 corruption in three byte walkers.**
+  `structural::parse_template`, `structural::substitute_metavars`,
+  and `pattern::CompiledPattern::replacement_probe` advanced one
+  byte at a time and pushed each raw byte as `char`, mojibaking
+  every multibyte codepoint. All three now advance by a full UTF-8
+  scalar via a shared `template_scan::utf8_char_len` helper.
+- **`rollback_committed` no longer unlinks the target before
+  restoring the backup.** The explicit `remove_file` was redundant
+  (`rename` replaces atomically on Unix) and opened a window where
+  neither the old nor the new content existed on disk.
+- **`finalize_apply` fsyncs parent dirs before deleting backups.**
+  The previous order unlinked the safety net before the rename
+  batch's directory entries were durable; a crash in the window
+  could leave the target absent with the backup already gone.
+- **`structural::emit_node` is iterative.** The recursive
+  implementation grew the stack proportionally to the depth of the
+  user's `--ast` pattern AST, giving pathological patterns a
+  stack-overflow vector. Replaced with an explicit `Open` / `Close`
+  frame stack — identical output, bounded by heap.
 
 ### CI
 
