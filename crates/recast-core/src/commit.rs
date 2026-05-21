@@ -1,4 +1,8 @@
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use rustix::fs::fsync;
 
 use crate::error::{Error, Result};
 use crate::plan::{FileChange, Plan};
@@ -10,19 +14,206 @@ pub struct ApplyOutcome {
     pub total_matches: usize,
 }
 
-/// Phase 1: in-place write per file. No rollback. Phase 2 will replace this
-/// with a two-phase atomic commit (sibling temp + fsync + rename, rollback
-/// on any failure).
-pub fn apply_changes(plan: &Plan) -> Result<ApplyOutcome> {
-    for change in &plan.changes {
-        write_one(change)?;
-    }
-    Ok(ApplyOutcome { files_written: plan.changes.len(), total_matches: plan.total_matches })
+struct Staged {
+    target: PathBuf,
+    temp_path: PathBuf,
 }
 
-fn write_one(change: &FileChange) -> Result<()> {
-    fs::write(&change.path, &change.after)
-        .map_err(|e| Error::Io { path: change.path.clone(), source: e })
+struct Committed {
+    target: PathBuf,
+    backup_path: PathBuf,
+}
+
+/// Two-phase atomic commit.
+///
+/// Phase A (stage): for every change, write the new content to a sibling
+/// temp file, fsync the temp, copy the original's permissions across, and
+/// fsync the parent directory so the entry is durable. Any failure during
+/// stage deletes every temp created so far; originals are untouched.
+///
+/// Phase B (commit): for every change, rename the original aside to a
+/// sibling `*.recast.bak` and rename the temp into place. Any failure
+/// during commit walks the rename log in reverse to restore originals;
+/// remaining staged temps are deleted. The on-disk tree ends up either
+/// fully rewritten or bit-identical to the pre-image.
+pub fn apply_changes(plan: &Plan) -> Result<ApplyOutcome> {
+    apply_inner(plan, |_| Ok(()))
+}
+
+pub(crate) fn apply_inner<F>(plan: &Plan, between_commits: F) -> Result<ApplyOutcome>
+where
+    F: Fn(usize) -> Result<()>,
+{
+    if plan.changes.is_empty() {
+        return Ok(ApplyOutcome { files_written: 0, total_matches: plan.total_matches });
+    }
+
+    let staged = stage_all(&plan.changes)?;
+
+    match commit_all(&staged, &between_commits) {
+        Ok(committed) => {
+            best_effort_cleanup_backups(&committed);
+            best_effort_fsync_parents(&committed);
+            Ok(ApplyOutcome {
+                files_written: plan.changes.len(),
+                total_matches: plan.total_matches,
+            })
+        }
+        Err(CommitFailure { committed, remaining_staged, error }) => {
+            rollback_committed(&committed);
+            cleanup_remaining_staged(&staged, remaining_staged);
+            Err(error)
+        }
+    }
+}
+
+fn stage_all(changes: &[FileChange]) -> Result<Vec<Staged>> {
+    let mut staged: Vec<Staged> = Vec::with_capacity(changes.len());
+    for change in changes {
+        match stage_one(change) {
+            Ok(s) => staged.push(s),
+            Err(e) => {
+                for s in &staged {
+                    let _ = fs::remove_file(&s.temp_path);
+                }
+                return Err(e);
+            }
+        }
+    }
+    Ok(staged)
+}
+
+fn stage_one(change: &FileChange) -> Result<Staged> {
+    let parent = change.path.parent().ok_or_else(|| Error::Io {
+        path: change.path.clone(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent directory"),
+    })?;
+
+    let permissions = fs::metadata(&change.path).map(|m| m.permissions()).ok();
+
+    let temp_name = sibling_temp_name(&change.path, "tmp");
+    let temp_path = parent.join(&temp_name);
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
+    file.write_all(change.after.as_bytes())
+        .map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
+    file.flush().map_err(|e| Error::Io { path: temp_path.clone(), source: e })?;
+    fsync(&file)
+        .map_err(|e| Error::Io { path: temp_path.clone(), source: std::io::Error::from(e) })?;
+    drop(file);
+
+    if let Some(perm) = permissions
+        && let Err(e) = fs::set_permissions(&temp_path, perm)
+    {
+        let _ = fs::remove_file(&temp_path);
+        return Err(Error::Io { path: temp_path, source: e });
+    }
+
+    Ok(Staged { target: change.path.clone(), temp_path })
+}
+
+struct CommitFailure {
+    committed: Vec<Committed>,
+    remaining_staged: usize,
+    error: Error,
+}
+
+fn commit_all<F>(
+    staged: &[Staged],
+    between_commits: &F,
+) -> std::result::Result<Vec<Committed>, CommitFailure>
+where
+    F: Fn(usize) -> Result<()>,
+{
+    let mut committed: Vec<Committed> = Vec::with_capacity(staged.len());
+    for (i, s) in staged.iter().enumerate() {
+        match commit_one(s) {
+            Ok(c) => committed.push(c),
+            Err(error) => {
+                return Err(CommitFailure { committed, remaining_staged: staged.len() - i, error });
+            }
+        }
+        if let Err(error) = between_commits(i) {
+            return Err(CommitFailure { committed, remaining_staged: staged.len() - i - 1, error });
+        }
+    }
+    Ok(committed)
+}
+
+fn commit_one(staged: &Staged) -> Result<Committed> {
+    let backup_name = sibling_temp_name(&staged.target, "bak");
+    let backup_path = staged
+        .target
+        .parent()
+        .ok_or_else(|| Error::Io {
+            path: staged.target.clone(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent directory"),
+        })?
+        .join(&backup_name);
+
+    fs::rename(&staged.target, &backup_path)
+        .map_err(|e| Error::Io { path: staged.target.clone(), source: e })?;
+
+    if let Err(e) = fs::rename(&staged.temp_path, &staged.target) {
+        let _ = fs::rename(&backup_path, &staged.target);
+        return Err(Error::Io { path: staged.target.clone(), source: e });
+    }
+
+    Ok(Committed { target: staged.target.clone(), backup_path })
+}
+
+fn rollback_committed(committed: &[Committed]) {
+    for c in committed.iter().rev() {
+        let _ = fs::remove_file(&c.target);
+        let _ = fs::rename(&c.backup_path, &c.target);
+    }
+}
+
+fn cleanup_remaining_staged(staged: &[Staged], remaining_count: usize) {
+    let start = staged.len().saturating_sub(remaining_count);
+    for s in &staged[start..] {
+        let _ = fs::remove_file(&s.temp_path);
+    }
+}
+
+fn best_effort_cleanup_backups(committed: &[Committed]) {
+    for c in committed {
+        let _ = fs::remove_file(&c.backup_path);
+    }
+}
+
+fn best_effort_fsync_parents(committed: &[Committed]) {
+    let mut seen: Vec<PathBuf> = Vec::new();
+    for c in committed {
+        if let Some(parent) = c.target.parent() {
+            if seen.iter().any(|p| p == parent) {
+                continue;
+            }
+            seen.push(parent.to_path_buf());
+            if let Ok(dir) = File::open(parent) {
+                let _ = fsync(&dir);
+            }
+        }
+    }
+}
+
+fn sibling_temp_name(target: &Path, kind: &str) -> String {
+    let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let nonce = nonce();
+    format!(".{name}.recast.{kind}.{nonce}")
+}
+
+fn nonce() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    ts.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(n)
 }
 
 #[cfg(test)]
@@ -58,5 +249,88 @@ mod tests {
         let outcome = apply_changes(&plan).unwrap();
         assert_eq!(outcome.files_written, 0);
         assert_eq!(fs::read_to_string(&file).unwrap(), "unrelated\n");
+    }
+
+    #[test]
+    fn apply_preserves_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("script.sh");
+        fs::write(&file, "Old\n").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o750)).unwrap();
+        let plan = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap();
+        apply_changes(&plan).unwrap();
+        let mode = fs::metadata(&file).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o750);
+    }
+
+    #[test]
+    fn apply_leaves_no_temp_or_backup_files_behind() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("a.txt");
+        fs::write(&file, "Old\n").unwrap();
+        let plan = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap();
+        apply_changes(&plan).unwrap();
+        let names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["a.txt"]);
+    }
+
+    #[test]
+    fn rollback_restores_tree_when_commit_fails_midway() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        let c = dir.path().join("c.txt");
+        fs::write(&a, "Old A\n").unwrap();
+        fs::write(&b, "Old B\n").unwrap();
+        fs::write(&c, "Old C\n").unwrap();
+        let plan = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap();
+        assert_eq!(plan.changes.len(), 3);
+
+        let err = apply_inner(&plan, |i| {
+            if i == 1 {
+                Err(Error::Io {
+                    path: dir.path().to_path_buf(),
+                    source: std::io::Error::other("injected mid-commit failure"),
+                })
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+        assert!(matches!(err, Error::Io { .. }));
+
+        assert_eq!(fs::read_to_string(&a).unwrap(), "Old A\n");
+        assert_eq!(fs::read_to_string(&b).unwrap(), "Old B\n");
+        assert_eq!(fs::read_to_string(&c).unwrap(), "Old C\n");
+
+        let names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| {
+                !n.starts_with(".a.txt.recast")
+                    && !n.starts_with(".b.txt.recast")
+                    && !n.starts_with(".c.txt.recast")
+            })
+            .collect();
+        let originals: std::collections::HashSet<_> = names.into_iter().collect();
+        assert!(originals.contains("a.txt"));
+        assert!(originals.contains("b.txt"));
+        assert!(originals.contains("c.txt"));
+    }
+
+    #[test]
+    fn rollback_leaves_originals_when_stage_fails() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.txt");
+        fs::write(&a, "Old\n").unwrap();
+        let plan = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap();
+        let outcome = apply_inner(&plan, |_| Ok(())).unwrap();
+        assert_eq!(outcome.files_written, 1);
+        assert_eq!(fs::read_to_string(&a).unwrap(), "New\n");
     }
 }
