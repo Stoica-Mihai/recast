@@ -10,7 +10,7 @@ Operating manual for AI agents and human contributors working in this repo.
 
 ## 2. Status
 
-Alpha (v0.1.7). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries ship for Linux (x86_64/aarch64, gnu + musl) and macOS (x86_64/aarch64) via the `release.yml` workflow. Windows is not a supported target — `#[cfg(unix)]` is assumed throughout. Update `PLAN.md` and `CHANGELOG.md` in lockstep with any further feature work.
+Alpha (v0.1.8). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries ship for Linux (x86_64/aarch64, gnu + musl) and macOS (x86_64/aarch64) via the `release.yml` workflow. Windows is not a supported target — `#[cfg(unix)]` is assumed throughout. Update `PLAN.md` and `CHANGELOG.md` in lockstep with any further feature work.
 
 ## 3. Thesis
 
@@ -184,7 +184,7 @@ The workflow does the rest.
 
 - Lookaround in default regex flavor — stay on `regex` crate; feature-gate `fancy-regex` if agents reach for it often.
 - Concurrent invocation safety (two `recast --apply` against the same tree) — current behavior is undefined. File locks? lease file in the workspace root? Pending design.
-- crates.io publish — gated on a complete hardening pass. Path-dep version pin already in place.
+- crates.io: `recast-cli` + `recast-core` both shipped (the bare `recast` name was taken by an unrelated crate). Path-dep version pin in workspace `Cargo.toml` tracks the workspace version; bump in lockstep per release.
 - YAML / TOML grammars — pending tree-sitter v0.25 ABI compatibility upstream.
 - Structural pattern UX — surface friendlier errors when `--ast` parse fails (currently dumps tree-sitter Query error).
 
