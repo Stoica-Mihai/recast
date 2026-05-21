@@ -5,7 +5,14 @@ All notable changes to `recast` land here. Format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 1.0.0 release exists.
 
-## [Unreleased]
+## [0.1.0] — 2026-05-21
+
+First tagged alpha. Charter from `PLAN.md` (phases 0–6) delivered;
+shipped as an unpublished workspace (no crates.io release yet,
+`publish = false`). Hardening tasks listed in §"Path to ready" remain
+before a 1.0 ship: crash-time recovery sweep, structural `--apply`
+through the 2-phase commit, cross-platform CI matrix, fuzz tests,
+more tree-sitter grammars.
 
 ### Added
 
