@@ -210,7 +210,10 @@ fn main() -> ExitCode {
     match run(cli) {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
-            eprintln!("recast: {err:#}");
+            eprintln!("recast: {err}");
+            for cause in err.chain().skip(1) {
+                eprintln!("  caused by: {cause}");
+            }
             ExitCode::from(EXIT_INTERNAL)
         }
     }
