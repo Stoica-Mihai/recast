@@ -1,0 +1,20 @@
+---
+source: crates/recast-core/src/rewrite_tests.rs
+assertion_line: 45
+expression: "unified_diff(\"src/big.rs\", before, after)"
+---
+--- a/src/big.rs
++++ b/src/big.rs
+@@ -1,10 +1,10 @@
+ line 1
+-line 2 OldName
++line 2 NewName
+ line 3
+ line 4
+ line 5
+ line 6
+ line 7
+-line 8 OldName
++line 8 NewName
+ line 9
+ line 10

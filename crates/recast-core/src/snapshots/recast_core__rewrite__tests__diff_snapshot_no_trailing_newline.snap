@@ -1,0 +1,12 @@
+---
+source: crates/recast-core/src/rewrite_tests.rs
+assertion_line: 52
+expression: "unified_diff(\"nonl.txt\", before, after)"
+---
+--- a/nonl.txt
++++ b/nonl.txt
+@@ -1 +1 @@
+-alpha
+\ No newline at end of file
++beta
+\ No newline at end of file
