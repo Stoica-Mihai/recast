@@ -84,6 +84,15 @@ fn plan_skips_non_utf8_binary_files() {
 }
 
 #[test]
+fn plan_rejects_files_over_max_bytes() {
+    let dir = fixture(&[("big.txt", "Old".repeat(2000).as_str())]);
+    let mut opts = PlanOptions::default();
+    opts.max_bytes = 64;
+    let err = plan_rewrite("Old", "New", &[dir.path()], &opts).unwrap_err();
+    assert!(matches!(err, Error::FileTooLarge { size: 6000, limit: 64, .. }));
+}
+
+#[test]
 fn plan_too_many_files() {
     let dir = fixture(&[("a.txt", "x"), ("b.txt", "x"), ("c.txt", "x")]);
     let mut opts = PlanOptions::default();
