@@ -32,6 +32,7 @@ structural = ["dep:tree-sitter", "dep:tree-sitter-rust"]
 [dev-dependencies]
 tempfile.workspace = true
 insta.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

@@ -34,6 +34,7 @@ serde_json = "1"
 insta = "1"
 assert_cmd = "2"
 predicates = "3"
+proptest = "1"
 
 recast-core = { path = "crates/recast-core", version = "=0.1.2" }
 

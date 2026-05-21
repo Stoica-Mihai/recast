@@ -12,6 +12,8 @@ pub mod json;
 mod parallel;
 mod pattern;
 mod plan;
+#[cfg(test)]
+mod proptests;
 mod rewrite;
 #[cfg(feature = "script")]
 mod script;
