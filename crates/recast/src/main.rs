@@ -1,9 +1,12 @@
+mod completion;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
+use clap_complete::Shell;
 use recast_core::{
     Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome, WalkOptions, apply_changes,
     json, plan_rewrite,
@@ -16,14 +19,16 @@ const EXIT_INTERNAL: u8 = 3;
 
 #[derive(Debug, Parser)]
 #[command(name = "recast", about = "Safe, atomic, transparent multi-file text rewrites.", version)]
-struct Cli {
+pub(crate) struct Cli {
     /// Regex pattern. Multi-line by default. Use --literal for plain-string
     /// matching.
-    pattern: String,
+    #[arg(required_unless_present = "completions")]
+    pattern: Option<String>,
 
     /// Replacement template. $1, $2, ${name} interpolated unless --literal
     /// is set.
-    replacement: String,
+    #[arg(required_unless_present = "completions")]
+    replacement: Option<String>,
 
     /// Paths or globs to scan. Defaults to the current directory if omitted.
     /// .gitignore respected by default.
@@ -108,6 +113,10 @@ struct Cli {
     /// Per-file timing and counters.
     #[arg(short = 'v', long, action = ArgAction::SetTrue)]
     verbose: bool,
+
+    /// Generate a shell completion script and exit.
+    #[arg(long, value_name = "SHELL", value_enum)]
+    completions: Option<Shell>,
 }
 
 impl Cli {
@@ -158,10 +167,17 @@ fn init_tracing() {
 }
 
 fn run(cli: Cli) -> Result<u8> {
+    if let Some(shell) = cli.completions {
+        completion::print(shell, &mut io::stdout().lock());
+        return Ok(EXIT_OK);
+    }
+
     let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
     let opts = cli.plan_options();
+    let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
+    let replacement = cli.replacement.as_deref().ok_or_else(|| anyhow!("replacement required"))?;
 
-    let plan = match plan_rewrite(&cli.pattern, &cli.replacement, &paths, &opts) {
+    let plan = match plan_rewrite(pattern, replacement, &paths, &opts) {
         Ok(plan) => plan,
         Err(err) => return Ok(handle_plan_error(err, cli.json)),
     };
