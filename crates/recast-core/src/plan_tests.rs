@@ -69,6 +69,21 @@ fn plan_match_guard_zero_allows_empty_match() {
 }
 
 #[test]
+fn plan_skips_non_utf8_binary_files() {
+    let dir = TempDir::new().unwrap();
+    let text = dir.path().join("a.txt");
+    let bin = dir.path().join("b.bin");
+    fs::write(&text, b"Old name\n").unwrap();
+    fs::write(&bin, [0xFF, 0xFE, 0x00, 0x01, 0x4F, 0x6C, 0x64]).unwrap();
+    let plan = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::Changes);
+    assert_eq!(plan.changes.len(), 1);
+    assert!(plan.changes[0].path.ends_with("a.txt"));
+    let before = fs::read(&bin).unwrap();
+    assert_eq!(before, vec![0xFF, 0xFE, 0x00, 0x01, 0x4F, 0x6C, 0x64]);
+}
+
+#[test]
 fn plan_too_many_files() {
     let dir = fixture(&[("a.txt", "x"), ("b.txt", "x"), ("c.txt", "x")]);
     let mut opts = PlanOptions::default();
