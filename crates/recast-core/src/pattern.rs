@@ -2,6 +2,14 @@ use regex::{Regex, RegexBuilder};
 
 use crate::error::Result;
 
+/// Knobs controlling how a pattern string is compiled into a regex.
+///
+/// - `literal` — treat the pattern (and replacement) as plain text;
+///   metacharacters are escaped.
+/// - `ignore_case` — case-insensitive matching.
+/// - `single_line` — disable the implicit `(?s)`. With it off (the
+///   default), `.` matches `\n`, which is what most LLM-driven rewrites
+///   expect.
 #[derive(Debug, Clone, Default)]
 pub struct PatternOptions {
     pub literal: bool,
@@ -9,6 +17,9 @@ pub struct PatternOptions {
     pub single_line: bool,
 }
 
+/// A compiled regex paired with its replacement template. Construct with
+/// [`CompiledPattern::compile`]; use [`CompiledPattern::is_convergent`]
+/// to check the idempotency invariant before scanning.
 #[derive(Debug, Clone)]
 pub struct CompiledPattern {
     regex: Regex,
@@ -17,6 +28,8 @@ pub struct CompiledPattern {
 }
 
 impl CompiledPattern {
+    /// Compile `pattern` into a regex and store `replacement` for later
+    /// substitution. Returns [`crate::Error::InvalidRegex`] on syntax errors.
     pub fn compile(pattern: &str, replacement: &str, opts: &PatternOptions) -> Result<Self> {
         let source = if opts.literal { regex::escape(pattern) } else { pattern.to_owned() };
         let regex = RegexBuilder::new(&source)

@@ -4,6 +4,7 @@ use similar::TextDiff;
 
 use crate::pattern::CompiledPattern;
 
+/// One file's pre-image, post-image, and match count.
 #[derive(Debug, Clone)]
 pub struct RewriteOutcome {
     pub before: String,
@@ -12,11 +13,14 @@ pub struct RewriteOutcome {
 }
 
 impl RewriteOutcome {
+    /// `true` when the rewrite actually changed the input.
     pub fn changed(&self) -> bool {
         self.before != self.after
     }
 }
 
+/// Apply `pattern` to `before` and return the rewrite outcome. Counts
+/// matches and produces the new text via `regex::replace_all`.
 pub fn rewrite_text(pattern: &CompiledPattern, before: &str) -> RewriteOutcome {
     let matches = pattern.regex().find_iter(before).count();
     let after = pattern.regex().replace_all(before, pattern.replacement()).into_owned();
@@ -39,6 +43,8 @@ pub fn label_for_path(path: &Path) -> String {
     if buf.as_os_str().is_empty() { ".".to_owned() } else { buf.to_string_lossy().into_owned() }
 }
 
+/// Render a unified diff between `before` and `after` with three lines
+/// of context, using `label` for the `a/`+`b/` header paths.
 pub fn unified_diff(label: &str, before: &str, after: &str) -> String {
     let diff = TextDiff::from_lines(before, after);
     let mut out = diff

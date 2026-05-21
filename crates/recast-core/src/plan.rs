@@ -8,14 +8,27 @@ use crate::pattern::{CompiledPattern, PatternOptions};
 use crate::rewrite::{label_for_path, rewrite_text, unified_diff};
 use crate::walker::{WalkOptions, walk_paths};
 
+/// Knobs controlling a single [`plan_rewrite`] invocation.
+///
+/// Defaults are tuned for safety-by-default LLM use: `at_least = Some(1)`
+/// makes a silent zero-match impossible, `max_bytes = 10 MiB`, and
+/// `max_files = 1000` keep runaway pattern matches in check.
 #[derive(Debug, Clone)]
 pub struct PlanOptions {
     pub pattern_options: PatternOptions,
     pub walk_options: WalkOptions,
+    /// Inclusive lower bound on total matches across all files. `None`
+    /// disables the guard; `Some(0)` accepts zero-match runs explicitly.
     pub at_least: Option<usize>,
+    /// Inclusive upper bound on total matches. `None` = unbounded.
     pub at_most: Option<usize>,
+    /// Skip the convergence (idempotency) check. Off by default — a
+    /// pattern like `a` → `aa` is rejected so re-runs cannot accidentally
+    /// grow the file.
     pub allow_non_convergent: bool,
+    /// Refuse to read any file larger than this many bytes.
     pub max_bytes: u64,
+    /// Refuse to plan if the walk turns up more files than this.
     pub max_files: usize,
 }
 
@@ -33,6 +46,8 @@ impl Default for PlanOptions {
     }
 }
 
+/// One file's worth of pending rewrite work. `before` and `after` are
+/// the full pre- and post-images; `diff` is the unified-diff rendering.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FileChange {
@@ -45,6 +60,13 @@ pub struct FileChange {
     pub diff: String,
 }
 
+/// Top-level result classification for a [`Plan`].
+///
+/// `Changes` — at least one file would be rewritten.
+/// `AlreadyApplied` — zero matches across the whole scan *and* the
+/// pattern is convergent (re-applying it to its own replacement would
+/// produce no further change), so the run is treated as a successful
+/// no-op rather than a guard violation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
@@ -53,6 +75,7 @@ pub enum PlanOutcome {
     AlreadyApplied,
 }
 
+/// Output of [`plan_rewrite`]. Pass to [`crate::apply_changes`] to commit.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Plan {
@@ -62,6 +85,10 @@ pub struct Plan {
     pub outcome: PlanOutcome,
 }
 
+/// Walk `roots`, compile `pattern`, and produce a [`Plan`] of every file
+/// that would change when `replacement` is substituted. Honors the
+/// match-count guard, the convergence check, and the file/byte limits in
+/// `opts`. No filesystem writes happen here.
 pub fn plan_rewrite<P: AsRef<Path>>(
     pattern: &str,
     replacement: &str,

@@ -6,6 +6,13 @@ use ignore::types::TypesBuilder;
 
 use crate::error::Result;
 
+/// Filters applied while walking `roots`.
+///
+/// `types` and `types_not` use the same shorthand vocabulary as ripgrep
+/// (`rust`, `js`, `py`, `markdown`, …). `globs` accept ripgrep-style
+/// include/exclude patterns: `"!vendor/**"` excludes, anything else
+/// includes. By default `.gitignore` is honored, hidden files are
+/// excluded, and symlinks are not followed.
 #[derive(Debug, Clone, Default)]
 pub struct WalkOptions {
     pub hidden: bool,
@@ -16,6 +23,10 @@ pub struct WalkOptions {
     pub globs: Vec<String>,
 }
 
+/// Enumerate every regular file under `roots` (sorted, dedup'd by the
+/// ignore crate) honoring `opts`. Directories, symlinks (unless
+/// `follow_symlinks` is set), and anything filtered out by ignore /
+/// globs / types are skipped.
 pub fn walk_paths<P: AsRef<Path>>(roots: &[P], opts: &WalkOptions) -> Result<Vec<PathBuf>> {
     let mut iter = if let Some(first) = roots.first() {
         WalkBuilder::new(first.as_ref())

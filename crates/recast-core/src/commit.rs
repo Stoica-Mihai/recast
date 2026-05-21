@@ -7,6 +7,8 @@ use rustix::fs::fsync;
 use crate::error::{Error, Result};
 use crate::plan::{FileChange, Plan};
 
+/// Returned by [`apply_changes`] on success: how many files were
+/// written and how many matches they covered.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ApplyOutcome {
