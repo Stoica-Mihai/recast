@@ -83,8 +83,7 @@ pub fn rewrite_text_scripted(
 
 /// Drop leading `./` (and repeats thereof) from a path so unified-diff
 /// headers read `a/src/a.rs` instead of `a/./src/a.rs`. Absolute paths
-/// and plain relative paths pass through unchanged. On Windows the
-/// separator is normalized to `/` so diff output is platform-agnostic.
+/// and plain relative paths pass through unchanged.
 pub fn label_for_path(path: &Path) -> String {
     let mut buf = PathBuf::new();
     let mut leading = true;
@@ -95,19 +94,7 @@ pub fn label_for_path(path: &Path) -> String {
         leading = false;
         buf.push(c.as_os_str());
     }
-    if buf.as_os_str().is_empty() {
-        ".".to_owned()
-    } else {
-        let lossy = buf.to_string_lossy();
-        // Backslash → forward slash only matters on Windows. Skip the
-        // scan + clone on Unix where paths never contain `\` as a
-        // separator.
-        if cfg!(windows) || lossy.contains('\\') {
-            lossy.replace('\\', "/")
-        } else {
-            lossy.into_owned()
-        }
-    }
+    if buf.as_os_str().is_empty() { ".".to_owned() } else { buf.to_string_lossy().into_owned() }
 }
 
 /// Render a unified diff between `before` and `after` with three lines

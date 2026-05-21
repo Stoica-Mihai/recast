@@ -252,14 +252,9 @@ fn best_effort_fsync_parents(committed: &[Committed]) {
     for c in committed {
         if let Some(parent) = c.target.parent()
             && seen.insert(parent)
+            && let Ok(dir) = std::fs::File::open(parent)
         {
-            // Windows does not allow fsync'ing a directory handle; the
-            // per-file sync_all already covers durability on that
-            // platform, so this loop is a no-op there.
-            #[cfg(unix)]
-            if let Ok(dir) = std::fs::File::open(parent) {
-                let _ = dir.sync_all();
-            }
+            let _ = dir.sync_all();
         }
     }
 }

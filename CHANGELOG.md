@@ -47,14 +47,16 @@ deprecation fix flagged by the 0.1.7 release run.
 
 ### Removed
 
-- **Windows from the CI + release matrix.** No longer running
+- **Windows as a supported target.** No longer running
   `cargo test` on `windows-latest`; no longer cross-compiling
-  `x86_64-pc-windows-msvc` artifacts. The release matrix shrinks
-  from seven targets to six (Linux gnu/musl × x86_64/aarch64 plus
-  macOS x86_64/aarch64). Source-level `#[cfg(windows)]` carve-outs
-  remain so anyone who wants to compile locally on Windows still
-  can — but pre-built binaries and CI green lights no longer cover
-  the platform.
+  `x86_64-pc-windows-msvc` artifacts; no longer carrying the
+  `#[cfg(windows)]` / `#[cfg(unix)]` carve-outs in source. The
+  release matrix shrinks from seven targets to six (Linux gnu/musl
+  × x86_64/aarch64 plus macOS x86_64/aarch64). The parent-directory
+  fsync, the symlink walker tests, and the permission-preservation
+  test all assume unix unconditionally now. `label_for_path` drops
+  the backslash-to-forward-slash translation it carried for Windows
+  diff headers.
 
 ## [0.1.7] — 2026-05-21
 

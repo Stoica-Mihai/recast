@@ -80,7 +80,6 @@ fn walker_glob_include_only_rust_files() {
     assert!(!files.iter().any(|p| p.ends_with("b.md")));
 }
 
-#[cfg(unix)]
 #[test]
 fn walker_skips_symlinks_by_default() {
     use std::os::unix::fs::symlink;
@@ -94,7 +93,6 @@ fn walker_skips_symlinks_by_default() {
     assert!(!files.iter().any(|p| p.ends_with("link.txt")));
 }
 
-#[cfg(unix)]
 #[test]
 fn walker_follow_symlinks_includes_targets() {
     use std::os::unix::fs::symlink;

@@ -388,10 +388,10 @@ Subject ≤ 72 chars. Body explains *why*, not *what*.
   obvious default. Reconsider if a future watch mode wants async.
 - **Binary distribution.** Plain `cargo install`, plus pre-built
   binaries for Linux (x86_64/aarch64, glibc + musl) and macOS
-  (x86_64/aarch64) from GitHub Releases. Windows is not currently
-  shipped — the `#[cfg(windows)]` code paths still compile but no
-  CI gate or release artifact exists. Optional Homebrew tap once
-  stable.
+  (x86_64/aarch64) from GitHub Releases. Windows is not a
+  supported target — unix-only APIs (parent-dir fsync,
+  permission-preserving stage) are used unconditionally. Optional
+  Homebrew tap once stable.
 
 ## 11. Naming context
 

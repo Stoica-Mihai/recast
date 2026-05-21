@@ -32,7 +32,6 @@ fn apply_with_no_changes_is_a_noop() {
 }
 
 #[test]
-#[cfg(unix)]
 fn apply_preserves_file_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
