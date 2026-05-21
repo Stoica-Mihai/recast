@@ -120,6 +120,46 @@ fn already_applied_message_on_rerun() {
 }
 
 #[test]
+fn stdin_mode_rewrites_buffer_to_stdout() {
+    recast()
+        .arg("--stdin")
+        .arg("Old")
+        .arg("New")
+        .write_stdin("fn OldName() { Old(); }\n")
+        .assert()
+        .success()
+        .stdout("fn NewName() { New(); }\n");
+}
+
+#[test]
+fn stdin_mode_guard_violation_exits_two() {
+    recast()
+        .arg("--stdin")
+        .arg("--at-least")
+        .arg("5")
+        .arg("Old")
+        .arg("New")
+        .write_stdin("Old once\n")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("match-count guard violated"));
+}
+
+#[test]
+fn stdin_mode_zero_matches_with_at_least_zero() {
+    recast()
+        .arg("--stdin")
+        .arg("--at-least")
+        .arg("0")
+        .arg("Zzz")
+        .arg("Q")
+        .write_stdin("unrelated\n")
+        .assert()
+        .success()
+        .stdout("unrelated\n");
+}
+
+#[test]
 fn completions_flag_outputs_shell_script() {
     recast()
         .arg("--completions")

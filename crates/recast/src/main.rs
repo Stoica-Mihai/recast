@@ -1,6 +1,6 @@
 mod completion;
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -8,8 +8,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::{ArgAction, Parser};
 use clap_complete::Shell;
 use recast_core::{
-    Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome, WalkOptions, apply_changes,
-    build_pool, json, plan_rewrite,
+    CompiledPattern, Error as CoreError, PatternOptions, Plan, PlanOptions, PlanOutcome,
+    WalkOptions, apply_changes, build_pool, json, plan_rewrite, rewrite_text,
 };
 
 const EXIT_OK: u8 = 0;
@@ -118,19 +118,29 @@ pub(crate) struct Cli {
     #[arg(long, value_name = "N")]
     threads: Option<usize>,
 
+    /// Read input from stdin, rewrite once, write to stdout. Skips the
+    /// walker, atomic commit, and convergence check — single-buffer.
+    /// Match-count guard still applies.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["apply", "check", "json"])]
+    stdin: bool,
+
     /// Generate a shell completion script and exit.
     #[arg(long, value_name = "SHELL", value_enum)]
     completions: Option<Shell>,
 }
 
 impl Cli {
+    fn pattern_options(&self) -> PatternOptions {
+        PatternOptions {
+            literal: self.literal,
+            ignore_case: self.ignore_case,
+            single_line: self.single_line,
+        }
+    }
+
     fn plan_options(&self) -> PlanOptions {
         PlanOptions {
-            pattern_options: PatternOptions {
-                literal: self.literal,
-                ignore_case: self.ignore_case,
-                single_line: self.single_line,
-            },
+            pattern_options: self.pattern_options(),
             walk_options: WalkOptions {
                 hidden: self.hidden,
                 no_ignore: self.no_ignore,
@@ -176,10 +186,15 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
-    let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
-    let opts = cli.plan_options();
     let pattern = cli.pattern.as_deref().ok_or_else(|| anyhow!("pattern required"))?;
     let replacement = cli.replacement.as_deref().ok_or_else(|| anyhow!("replacement required"))?;
+
+    if cli.stdin {
+        return run_stdin(&cli, pattern, replacement);
+    }
+
+    let paths: Vec<PathBuf> = cli.paths.iter().map(PathBuf::from).collect();
+    let opts = cli.plan_options();
     let pool = build_pool(cli.threads).context("configure worker thread pool")?;
 
     let plan = match pool.install(|| plan_rewrite(pattern, replacement, &paths, &opts)) {
@@ -208,6 +223,37 @@ fn run(cli: Cli) -> Result<u8> {
     }
 
     emit_diff(&cli, &plan).context("emit diff output")?;
+    Ok(EXIT_OK)
+}
+
+fn run_stdin(cli: &Cli, pattern: &str, replacement: &str) -> Result<u8> {
+    let compiled = CompiledPattern::compile(pattern, replacement, &cli.pattern_options())
+        .context("compile pattern")?;
+
+    let mut buf = String::new();
+    io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
+    let outcome = rewrite_text(&compiled, &buf);
+
+    if let Some(min) = cli.at_least.or(Some(1))
+        && outcome.matches < min
+    {
+        eprintln!(
+            "recast: match-count guard violated: found {}, required at least {}",
+            outcome.matches, min
+        );
+        return Ok(EXIT_GUARD_VIOLATED);
+    }
+    if let Some(max) = cli.at_most
+        && outcome.matches > max
+    {
+        eprintln!(
+            "recast: match-count guard violated: found {}, allowed at most {}",
+            outcome.matches, max
+        );
+        return Ok(EXIT_GUARD_VIOLATED);
+    }
+
+    io::stdout().lock().write_all(outcome.after.as_bytes()).context("write stdout")?;
     Ok(EXIT_OK)
 }
 
