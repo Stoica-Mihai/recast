@@ -53,16 +53,21 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross build --release --all-features --target ${{ matrix.target }} -p recast-cli
+            cross build --release --all-features --target ${{ matrix.target }} -p recast-cli -p recast-mcp
           else
-            cargo build --release --all-features --target ${{ matrix.target }} -p recast-cli
+            cargo build --release --all-features --target ${{ matrix.target }} -p recast-cli -p recast-mcp
           fi
       - name: package
         shell: bash
+        # Bundle both binaries in the same tarball — users who install
+        # the CLI also typically want the MCP server, and downloading
+        # one archive is simpler than two. Cross-target builds emit
+        # both under target/${target}/release/.
         run: |
           name="recast-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir -p dist staging
           cp "target/${{ matrix.target }}/release/recast" staging/
+          cp "target/${{ matrix.target }}/release/recast-mcp" staging/
           cp README.md LICENSE CHANGELOG.md staging/
           tar -czf "dist/${name}.tar.gz" -C staging .
           (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
@@ -98,6 +103,10 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p recast-cli --token "$CARGO_REGISTRY_TOKEN"
+      - name: cargo publish recast-mcp
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p recast-mcp --token "$CARGO_REGISTRY_TOKEN"
 
   publish:
     name: attach to release
