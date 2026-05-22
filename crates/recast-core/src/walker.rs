@@ -4,6 +4,20 @@
 //! ripgrep-equivalent defaults (`.gitignore` respected, hidden files
 //! excluded, symlinks not followed). Globs use the override engine so
 //! `!pattern` works as a per-invocation exclude.
+//!
+//! ## Symlink semantics
+//!
+//! `follow_symlinks=false` (default): symlinks are skipped entirely —
+//! neither the link entry nor its target are visited. Safe by default
+//! for `--apply`: a malicious or accidental link can't redirect a
+//! rewrite onto a file outside the user's chosen root.
+//!
+//! `follow_symlinks=true`: the walker resolves links and visits their
+//! targets (including targets outside the walker root), but still
+//! honors `.gitignore` along the way and breaks cycles via the
+//! `ignore` crate's built-in loop detection. Dangling links surface
+//! as walk errors rather than panicking; cycles abort the walk with a
+//! typed error instead of looping forever.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

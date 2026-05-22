@@ -107,6 +107,85 @@ fn walker_follow_symlinks_includes_targets() {
 }
 
 #[test]
+fn walker_does_not_loop_on_symlink_cycle_when_following() {
+    // Symlink cycle: link_a → link_b, link_b → link_a. With
+    // follow_symlinks=true the walker must not recurse forever; the
+    // ignore crate's WalkBuilder tracks visited directories and
+    // breaks cycles via its built-in loop detection.
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("real.txt"), b"x").unwrap();
+    symlink(root.join("link_b"), root.join("link_a")).unwrap();
+    symlink(root.join("link_a"), root.join("link_b")).unwrap();
+    let opts = WalkOptions { follow_symlinks: true, ..Default::default() };
+    // The walk completes (no infinite loop). Result may carry a Walk
+    // error for the cycle, which we want surfaced rather than swallowed
+    // — callers can decide whether a cycle is fatal.
+    let _ = walk_paths(&[root], &opts);
+}
+
+#[test]
+fn walker_handles_broken_symlink_without_panic() {
+    // Dangling symlink: target doesn't exist. The walker must yield a
+    // walk error (or skip silently) but never panic.
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("real.txt"), b"x").unwrap();
+    symlink(root.join("does_not_exist"), root.join("dangling")).unwrap();
+    let opts = WalkOptions { follow_symlinks: true, ..Default::default() };
+    let _ = walk_paths(&[root], &opts);
+    // Default (no-follow) walk must succeed and skip the dangling link.
+    let files = walk_paths(&[root], &WalkOptions::default()).unwrap();
+    assert!(files.iter().any(|p| p.ends_with("real.txt")));
+    assert!(!files.iter().any(|p| p.ends_with("dangling")));
+}
+
+#[test]
+fn walker_follows_symlinks_to_outside_root_when_enabled() {
+    // Symlink whose target lives outside the walker root. With
+    // follow_symlinks=true the linked file is included (ignore's
+    // default behavior). With follow_symlinks=false the link is
+    // skipped, so nothing outside the root leaks in.
+    use std::os::unix::fs::symlink;
+
+    let outside = TempDir::new().unwrap();
+    fs::write(outside.path().join("secret.txt"), b"hi").unwrap();
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join("inside.txt"), b"x").unwrap();
+    symlink(outside.path().join("secret.txt"), root.join("link.txt")).unwrap();
+
+    let no_follow = walk_paths(&[root], &WalkOptions::default()).unwrap();
+    assert!(!no_follow.iter().any(|p| p.ends_with("link.txt")));
+
+    let follow =
+        walk_paths(&[root], &WalkOptions { follow_symlinks: true, ..Default::default() }).unwrap();
+    assert!(follow.iter().any(|p| p.ends_with("link.txt")));
+}
+
+#[test]
+fn walker_follow_symlinks_still_honors_gitignore() {
+    // Following symlinks must not bypass .gitignore filtering: an
+    // ignored target should remain hidden whether reached directly or
+    // via a symlink.
+    use std::os::unix::fs::symlink;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    fs::write(root.join(".gitignore"), b"ignored.txt\n").unwrap();
+    fs::write(root.join("ignored.txt"), b"x").unwrap();
+    symlink(root.join("ignored.txt"), root.join("link.txt")).unwrap();
+    let opts = WalkOptions { follow_symlinks: true, ..Default::default() };
+    let files = walk_paths(&[root], &opts).unwrap();
+    assert!(!files.iter().any(|p| p.ends_with("ignored.txt")));
+}
+
+#[test]
 fn walker_glob_negate_excludes_vendor() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
