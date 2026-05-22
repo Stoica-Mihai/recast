@@ -88,14 +88,10 @@ pub fn from_plan(plan: &Plan) -> JsonReport<'_> {
 }
 
 pub fn from_apply<'a>(plan: &'a Plan, outcome: &ApplyOutcome) -> JsonReport<'a> {
-    JsonReport::Apply {
-        header: JsonHeader {
-            outcome: plan.outcome,
-            files_scanned: plan.files_scanned,
-            total_matches: outcome.total_matches,
-        },
-        files_written: outcome.files_written,
-    }
+    // `outcome.total_matches` is always sourced from `plan.total_matches`
+    // (see commit::apply_changes); routing through `header(plan)` keeps
+    // a single source of truth so the two paths can't drift.
+    JsonReport::Apply { header: header(plan), files_written: outcome.files_written }
 }
 
 pub fn from_check(plan: &Plan) -> JsonReport<'_> {
