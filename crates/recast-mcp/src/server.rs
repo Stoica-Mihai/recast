@@ -15,8 +15,9 @@
 use std::path::PathBuf;
 
 use recast_core::{
-    Language, PatternOptions, PlanOptions, RecoverySummary, WalkOptions, apply_changes, json,
-    plan_rewrite, plan_structural_rewrite, recover_sweep,
+    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, ScriptRewriter, WalkOptions,
+    apply_changes, compile_friendly_query, json, plan_rewrite, plan_rewrite_scripted,
+    plan_structural_rewrite, recover_sweep,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -51,16 +52,15 @@ impl RecastServer {
     #[tool(description = "Preview a multi-file regex rewrite without writing anything to disk. \
                        Returns a per-file plan with match counts and rendered unified diffs. \
                        The `--at-least 1` guard fires by default so silent zero-match runs \
-                       become errors. Use this before `recast_apply` to verify the pattern \
-                       does what you expect.")]
+                       become errors. Pass `script_source` or `script_path` to drive each \
+                       replacement through a Rhai callback instead of a static template. \
+                       Use this before `recast_apply` to verify the pattern does what you \
+                       expect.")]
     async fn recast_preview(
         &self,
         Parameters(args): Parameters<RewriteArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let opts = args.plan_options()?;
-        let paths = args.paths_as_pathbufs();
-        let plan =
-            plan_rewrite(&args.pattern, &args.replacement, &paths, &opts).map_err(to_mcp_err)?;
+        let plan = plan_for(&args)?;
         Ok(CallToolResult::success(vec![Content::json(json::from_plan(&plan))?]))
     }
 
@@ -68,25 +68,26 @@ impl RecastServer {
                        with rollback: every change is staged as a sibling temp + fsync, then \
                        renamed into place; any per-file failure restores every already-renamed \
                        original from its backup. Surfaces non-convergent patterns (e.g. \
-                       `a` -> `aa`) before any write. Use `recast_preview` first to inspect \
-                       the diff.")]
+                       `a` -> `aa`) before any write. Same `script_source` / `script_path` \
+                       support as `recast_preview` for dynamic replacements. Use \
+                       `recast_preview` first to inspect the diff.")]
     async fn recast_apply(
         &self,
         Parameters(args): Parameters<RewriteArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let opts = args.plan_options()?;
-        let paths = args.paths_as_pathbufs();
-        let plan =
-            plan_rewrite(&args.pattern, &args.replacement, &paths, &opts).map_err(to_mcp_err)?;
+        let plan = plan_for(&args)?;
         let outcome = apply_changes(&plan).map_err(to_mcp_err)?;
         Ok(CallToolResult::success(vec![Content::json(json::from_apply(&plan, &outcome))?]))
     }
 
-    #[tool(description = "Structural rewrite via tree-sitter `--ast` pattern. Match and replace \
-                       AST nodes in a target language using friendly placeholders \
-                       (`$NAME`, `$$$BODY`) instead of regex. Pass `apply: true` to write \
-                       changes; default is dry-run. Supported langs: rust, ts, tsx, js, \
-                       python, bash, go, json, markdown.")]
+    #[tool(description = "Structural rewrite via tree-sitter. Pass `ast_pattern` to write \
+                       the match in friendly target-language syntax with `$NAME` / `$$$BODY` \
+                       placeholders (the engine compiles it to a tree-sitter Query). Or pass \
+                       `query` to supply a raw S-expression directly. Exactly one of `query` / \
+                       `ast_pattern` is required. `template` is the rewrite, captures bound \
+                       as `$name` / `${name}`. Pass `apply: true` to write; default is \
+                       dry-run. Supported langs: rust, ts, tsx, js, python, bash, go, json, \
+                       markdown.")]
     async fn recast_structural(
         &self,
         Parameters(args): Parameters<StructuralArgs>,
@@ -94,7 +95,17 @@ impl RecastServer {
         let opts = args.plan_options()?;
         let paths = args.paths_as_pathbufs();
         let lang = Language::from_name(&args.lang).map_err(to_mcp_err)?;
-        let plan = plan_structural_rewrite(lang, &args.query, &args.template, &paths, &opts)
+        let query = match (&args.query, &args.ast_pattern) {
+            (Some(_), Some(_)) => {
+                return Err(invalid_args("supply either `query` or `ast_pattern`, not both"));
+            }
+            (Some(q), None) => q.clone(),
+            (None, Some(pat)) => compile_friendly_query(lang, pat).map_err(to_mcp_err)?,
+            (None, None) => {
+                return Err(invalid_args("one of `query` or `ast_pattern` is required"));
+            }
+        };
+        let plan = plan_structural_rewrite(lang, &query, &args.template, &paths, &opts)
             .map_err(to_mcp_err)?;
         if args.apply {
             let outcome = apply_changes(&plan).map_err(to_mcp_err)?;
@@ -140,8 +151,23 @@ impl ServerHandler for RecastServer {
 pub struct RewriteArgs {
     /// Regex pattern to match. Multi-line by default; `.` matches `\n`.
     pub pattern: String,
-    /// Replacement template. `$1`, `${name}` interpolated unless `literal: true`.
+    /// Replacement template. `$1`, `${name}` interpolated unless
+    /// `literal: true`. Ignored when `script_source` or `script_path`
+    /// is set — pass `""` in that case.
+    #[serde(default)]
     pub replacement: String,
+    /// Inline Rhai script source. Mutually exclusive with
+    /// `script_path`. When set, the script runs per regex match and
+    /// its return value is the replacement; `replacement` is ignored.
+    /// Script sees `captures` (array; index 0 is the full match) and
+    /// `whole` (full match alias).
+    #[serde(default)]
+    pub script_source: Option<String>,
+    /// Path to a Rhai script file. Mutually exclusive with
+    /// `script_source`. Same semantics — return value per match
+    /// becomes the replacement.
+    #[serde(default)]
+    pub script_path: Option<PathBuf>,
     /// Paths or globs to scan. Defaults to `["."]` if omitted.
     #[serde(default = "default_paths")]
     pub paths: Vec<String>,
@@ -195,11 +221,16 @@ pub struct RewriteArgs {
 pub struct StructuralArgs {
     /// Target language (rust, ts, tsx, js, python, bash, go, json, markdown).
     pub lang: String,
-    /// Tree-sitter S-expression query, OR a friendly `--ast` pattern
-    /// compiled by the caller. The MCP server expects the already-compiled
-    /// query form; use `recast-core::compile_friendly_query` upstream
-    /// to translate `$NAME` patterns first.
-    pub query: String,
+    /// Tree-sitter S-expression query. Mutually exclusive with
+    /// `ast_pattern`; exactly one is required.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Friendly `--ast` pattern in target-language source with `$NAME`
+    /// / `$$$NAME` placeholders. Compiled to a tree-sitter Query by
+    /// the engine. Mutually exclusive with `query`; exactly one is
+    /// required.
+    #[serde(default)]
+    pub ast_pattern: Option<String>,
     /// Rewrite template; captures referenced as `$name` / `${name}`.
     pub template: String,
     /// Paths or globs to scan.
@@ -237,6 +268,27 @@ pub struct RecoverArgs {
     /// Paths to sweep for leftover `.recast.bak.*` / `.tmp.*` siblings.
     #[serde(default = "default_paths")]
     pub paths: Vec<String>,
+}
+
+/// Run the planner for a `RewriteArgs` call, picking the regex or
+/// scripted variant based on whether a Rhai script was supplied.
+/// Both `recast_preview` and `recast_apply` route through here so the
+/// script-vs-template branching lives in one place.
+fn plan_for(args: &RewriteArgs) -> Result<Plan, McpError> {
+    let opts = args.plan_options()?;
+    let paths = args.paths_as_pathbufs();
+    let script = match (&args.script_source, &args.script_path) {
+        (Some(_), Some(_)) => {
+            return Err(invalid_args("supply either `script_source` or `script_path`, not both"));
+        }
+        (Some(src), None) => Some(ScriptRewriter::from_source(src).map_err(to_mcp_err)?),
+        (None, Some(path)) => Some(ScriptRewriter::from_file(path).map_err(to_mcp_err)?),
+        (None, None) => None,
+    };
+    match script {
+        Some(s) => plan_rewrite_scripted(&args.pattern, &s, &paths, &opts).map_err(to_mcp_err),
+        None => plan_rewrite(&args.pattern, &args.replacement, &paths, &opts).map_err(to_mcp_err),
+    }
 }
 
 fn default_paths() -> Vec<String> {
@@ -325,6 +377,14 @@ fn walk_options_from(
         types_not: types_not.to_vec(),
         globs: globs.to_vec(),
     }
+}
+
+/// MCP error for caller-side mistakes (mutual-exclusion violation,
+/// missing required field). Distinguishes "agent sent bad args" from
+/// "engine returned a typed error" so the agent's recovery branches
+/// stay separable.
+fn invalid_args(msg: &str) -> McpError {
+    McpError::invalid_params(msg.to_owned(), None)
 }
 
 /// Convert a `recast-core::Error` into an `McpError` while preserving
