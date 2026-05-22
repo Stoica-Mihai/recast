@@ -85,6 +85,15 @@ pub fn rewrite_text_scripted(
 /// headers read `a/src/a.rs` instead of `a/./src/a.rs`. Absolute paths
 /// and plain relative paths pass through unchanged.
 pub fn label_for_path(path: &Path) -> String {
+    // Fast path: most paths the planner labels are either absolute
+    // (`/.../file`) or plain relative (`src/file`); only paths the user
+    // wrote with a literal `.` prefix need the component walk +
+    // PathBuf rebuild. Empty input drops through to the slow path so
+    // the final-empty check returns `"."` as before.
+    match path.components().next() {
+        None | Some(Component::CurDir) => {}
+        _ => return path.to_string_lossy().into_owned(),
+    }
     let mut buf = PathBuf::new();
     let mut leading = true;
     for c in path.components() {
