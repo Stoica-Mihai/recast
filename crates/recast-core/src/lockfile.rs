@@ -50,7 +50,16 @@ pub fn acquire_workspace_lock(lock_path: &Path) -> Result<WorkspaceLock> {
         .open(lock_path)
         .io_ctx(lock_path)?;
 
-    file.try_lock_exclusive().map_err(|_| Error::Locked { path: lock_path.to_path_buf() })?;
+    // try_lock_exclusive surfaces WouldBlock when the lock is held by
+    // another process; every other io::Error (EPERM, ENOSPC, EIO, …)
+    // is a real failure that should propagate as Error::Io instead of
+    // being misclassified as "another recast is already applying".
+    if let Err(e) = file.try_lock_exclusive() {
+        return match e.kind() {
+            std::io::ErrorKind::WouldBlock => Err(Error::Locked { path: lock_path.to_path_buf() }),
+            _ => Err(Error::Io { path: lock_path.to_path_buf(), source: e }),
+        };
+    }
     Ok(WorkspaceLock { file, path: lock_path.to_path_buf() })
 }
 
