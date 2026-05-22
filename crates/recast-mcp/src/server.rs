@@ -379,6 +379,10 @@ fn walk_options_from(
     }
 }
 
+#[cfg(test)]
+#[path = "server_tests.rs"]
+mod tests;
+
 /// MCP error for caller-side mistakes (mutual-exclusion violation,
 /// missing required field). Distinguishes "agent sent bad args" from
 /// "engine returned a typed error" so the agent's recovery branches
