@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779462025957,
+  "lastUpdate": 1779462344058,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -311,6 +311,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 6975865,
             "range": "± 211853",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "d17e28ba2948285c849811c7b8ef92bdd87dc3bf",
+          "message": "chore: bump to 0.1.9",
+          "timestamp": "2026-05-22T18:02:46+03:00",
+          "tree_id": "e8bbe7dcf825234a7e1f897ba29f22e892d19650",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/d17e28ba2948285c849811c7b8ef92bdd87dc3bf"
+        },
+        "date": 1779462343553,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2390,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 622884,
+            "range": "± 10981",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1684098,
+            "range": "± 157063",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2530060,
+            "range": "± 92292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 3812440,
+            "range": "± 122023",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3198033,
+            "range": "± 49961",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3439515,
+            "range": "± 142693",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4585325,
+            "range": "± 157804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 7362591,
+            "range": "± 180767",
             "unit": "ns/iter"
           }
         ]
