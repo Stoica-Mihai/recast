@@ -52,6 +52,7 @@ lang-all = [
 tempfile.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
+fs2.workspace = true
 
 [lints]
 workspace = true
