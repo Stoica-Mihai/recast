@@ -10,7 +10,7 @@ Operating manual for AI agents and human contributors working in this repo.
 
 ## 2. Status
 
-Alpha (v0.1.9). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries ship for Linux (x86_64/aarch64, gnu + musl) and macOS (x86_64/aarch64) via the `release.yml` workflow. Windows is not a supported target — `#[cfg(unix)]` is assumed throughout. Update `PLAN.md` and `CHANGELOG.md` in lockstep with any further feature work.
+Alpha (v0.1.10). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries ship for Linux (x86_64/aarch64, gnu + musl) and macOS (x86_64/aarch64) via the `release.yml` workflow. Windows is not a supported target — `#[cfg(unix)]` is assumed throughout. Update `PLAN.md` and `CHANGELOG.md` in lockstep with any further feature work.
 
 ## 3. Thesis
 

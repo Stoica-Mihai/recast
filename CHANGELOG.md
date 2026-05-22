@@ -7,6 +7,22 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.10] — 2026-05-22
+
+Hotfix: replace the placeholder root README on the `recast-mcp`
+crates.io page with a dedicated MCP-focused README. Otherwise
+identical to 0.1.9.
+
+### Fixed
+
+- **`recast-mcp` crates.io listing showed CLI install instructions.**
+  All three crates pinned `readme = "../../README.md"`, so the
+  crates.io page for the MCP server told you to `cargo install
+  recast-cli`. Added `crates/recast-mcp/README.md` with the MCP
+  install + client-config + tool-list content and pointed the crate
+  manifest at it. `recast-cli` and `recast-core` still share the
+  root README (close enough to their actual landing-page audience).
+
 ## [0.1.9] — 2026-05-22
 
 Post-`0.1.8` follow-through: a deep audit pass over the previously
