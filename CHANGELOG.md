@@ -7,6 +7,70 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+
+- **`recast-mcp` crate.** Model Context Protocol server that exposes
+  the recast engine to MCP-aware AI agents (Claude Desktop, Cursor,
+  Continue, Cline, custom MCP clients). Library-linked against
+  `recast-core` — no subprocess, no CLI string assembly, no JSON
+  parse round-trip. Speaks JSON-RPC over stdio per MCP convention.
+  Four tools, 1:1 with the planner API: `recast_preview`,
+  `recast_apply`, `recast_structural`, `recast_recover`. Typed
+  argument schemas (via `rmcp` 1.7 + `schemars` 1.x) so agents can't
+  malform calls; engine errors propagate as `McpError` with the
+  typed `kind` discriminator preserved in the payload.
+- **Walker symlink regression tests.** Cover cycle detection,
+  dangling links, escape-root behavior with/without
+  `follow_symlinks`, and the gitignore interaction when following
+  links. Symlink semantics now documented in `walker.rs` module
+  doc-comment.
+- **Concurrent-apply integration tests** in
+  `crates/recast/tests/concurrency.rs`. External fs2 lock on
+  `.recast.lock` forces `recast --apply` to exit non-zero with the
+  `Locked` error; `--force` bypasses the guard.
+- **Nightly fuzz workflow** (`.github/workflows/fuzz.yml`) runs three
+  cargo-fuzz targets (compile_friendly_query,
+  structural_rewrite_friendly, pattern_compile_convergence) for 60
+  minutes each per day. Corpus cached across runs so coverage
+  compounds.
+- **Criterion regression gate** (`.github/workflows/bench.yml`) runs
+  benches on every PR, diffs against the `main` baseline stored on
+  `gh-pages`, comments + fails the check at >50% regression.
+
+### Changed
+
+- **Walker uses `WalkParallel`** instead of the single-threaded
+  iterator. Honors the surrounding rayon pool's thread count so
+  `--threads N` is now respected for the walk phase as well.
+- **`label_for_path` fast path** for absolute / plain-relative paths
+  — skips the PathBuf rebuild when no leading `./` needs stripping.
+  Saves one allocation per labeled file in the planner's hot loop.
+- **`from_apply` routes through `header(plan)`** to dedupe the
+  JsonHeader construction; the two header builders no longer drift.
+
+### Fixed
+
+- **Lockfile error misclassification.** `acquire_workspace_lock`
+  used to fold every `io::Error` from `try_lock_exclusive` into
+  `Error::Locked`, hiding permission-denied / ENOSPC / EIO behind
+  "another recast is already applying". Now matches on
+  `ErrorKind::WouldBlock` and only that variant maps to `Locked`;
+  every other variant propagates as `Error::Io` with the underlying
+  source preserved.
+- **Workspace lock derivation canonicalizes input paths** and locks
+  at the deepest common ancestor. Two `--apply` invocations against
+  the same tree from different CWDs (or one against `src/`, one
+  against `src/sub/`) now share one `.recast.lock` instead of
+  proceeding in parallel.
+- **EXDEV fallback** in `commit_one`, `rollback_committed`, and
+  `recover_sweep`. A new `rename_with_exdev_fallback` helper catches
+  `ErrorKind::CrossesDevices` from `fs::rename` and degrades to
+  `copy + sync_all + remove_file`. Same-directory renames inside a
+  normal filesystem never hit this path; overlayfs, unionfs, FUSE
+  backends, and certain container layouts can return EXDEV even for
+  lexically-sibling renames, so the apply now degrades cleanly
+  rather than aborting.
+
 ## [0.1.8] — 2026-05-22
 
 Post-`0.1.7` follow-through: residual cleanup-pass items + a CI

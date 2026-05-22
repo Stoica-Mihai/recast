@@ -274,8 +274,48 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
-130 tests on Linux + macOS. Proptest harness covers every public
+136 tests on Linux + macOS. Proptest harness covers every public
 entry point with randomized input.
+
+## For AI agents (MCP server)
+
+`recast-mcp` exposes the engine as a [Model Context Protocol] server
+that MCP-aware agents (Claude Desktop, Cursor, Continue, Cline, …)
+discover automatically through their tool registry. Same engine as
+`recast-cli`, library-linked — no subprocess, no shell escaping, no
+version skew.
+
+```bash
+cargo install recast-mcp
+```
+
+Add to your MCP client config (Claude Desktop example):
+
+```json
+{
+  "mcpServers": {
+    "recast": { "command": "recast-mcp" }
+  }
+}
+```
+
+Restart the client. Four tools become available:
+
+| Tool | Purpose |
+|---|---|
+| `recast_preview` | Dry-run a regex rewrite, return plan + diffs. |
+| `recast_apply`   | Atomically apply a regex rewrite to disk. |
+| `recast_structural` | Tree-sitter `--ast` rewrite (dry-run or apply). |
+| `recast_recover` | Reconcile leftover `.recast.bak.*` / `.tmp.*` siblings. |
+
+Why agents reach for it instead of `write_file` loops or `sed`:
+default `--at-least 1` guard turns silent zero-match runs into
+errors, convergence check refuses non-idempotent patterns, two-phase
+commit rolls back mid-failure, and every response is structured JSON
+so the agent can branch on `kind` without string-matching error
+messages.
+
+[Model Context Protocol]: https://modelcontextprotocol.io
 
 ### Benchmarks
 
