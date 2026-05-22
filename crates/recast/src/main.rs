@@ -521,14 +521,55 @@ fn acquire_workspace_lock_for(cli: &Cli) -> std::result::Result<Option<Workspace
     if !writes_tree || cli.force || cli.stdin {
         return Ok(None);
     }
-    let first =
-        cli.paths.first().or(cli.pattern.as_ref()).cloned().unwrap_or_else(|| ".".to_owned());
-    let root = PathBuf::from(first);
+    // Collect every positional path the invocation will touch so the
+    // lock sits at their common ancestor rather than the first path
+    // alone. Without that, two `--apply` runs against overlapping
+    // subtrees from different CWDs (or one against `src/`, one against
+    // `src/sub/`) end up holding two different `.recast.lock` files
+    // and proceed in parallel.
+    let raw_paths: Vec<PathBuf> =
+        if cli.recover { cli.recover_paths() } else { cli.paths_as_pathbufs() };
+    let lock_path = workspace_lock_path(&raw_paths);
+    acquire_workspace_lock(&lock_path).map(Some)
+}
+
+/// Pick the `.recast.lock` location for an apply/recover invocation.
+/// Canonicalizes every input path so relative paths from different
+/// CWDs collapse to the same anchor, then takes the deepest common
+/// ancestor. Falls back to the original path when canonicalization
+/// fails (file doesn't exist yet); falls back to `"."` when nothing
+/// useful survives.
+fn workspace_lock_path(paths: &[PathBuf]) -> PathBuf {
+    use std::fs;
+    let canonical: Vec<PathBuf> =
+        paths.iter().map(|p| fs::canonicalize(p).unwrap_or_else(|_| p.clone())).collect();
+    let root = common_ancestor(&canonical).unwrap_or_else(|| PathBuf::from("."));
     let lock_dir = if root.is_file() {
-        root.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        root.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("/"))
     } else {
         root
     };
-    let lock_path = lock_dir.join(".recast.lock");
-    acquire_workspace_lock(&lock_path).map(Some)
+    lock_dir.join(".recast.lock")
+}
+
+/// Deepest path prefix shared by every element of `paths`. Returns
+/// `None` only if the slice is empty. For absolute paths the result is
+/// at worst `"/"`; for purely-relative paths from the same CWD it can
+/// degenerate to the empty path (caller substitutes `"."`).
+fn common_ancestor(paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut iter = paths.iter();
+    let first = iter.next()?;
+    let mut common: Vec<&std::ffi::OsStr> = first.iter().collect();
+    for p in iter {
+        let shared = common.iter().zip(p.iter()).take_while(|(a, b)| **a == *b).count();
+        common.truncate(shared);
+        if common.is_empty() {
+            return None;
+        }
+    }
+    let mut buf = PathBuf::new();
+    for c in common {
+        buf.push(c);
+    }
+    Some(buf)
 }
