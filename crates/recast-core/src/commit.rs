@@ -213,10 +213,10 @@ fn commit_one(staged: &Staged, nonces: &NonceGen) -> Result<Committed> {
     let backup_name = sibling_temp_name(&staged.target, SiblingKind::Backup, nonces);
     let backup_path = parent_dir(&staged.target)?.join(&backup_name);
 
-    fs::rename(&staged.target, &backup_path).io_ctx(&staged.target)?;
+    rename_with_exdev_fallback(&staged.target, &backup_path).io_ctx(&staged.target)?;
 
-    if let Err(e) = fs::rename(&staged.temp_path, &staged.target) {
-        let _ = fs::rename(&backup_path, &staged.target);
+    if let Err(e) = rename_with_exdev_fallback(&staged.temp_path, &staged.target) {
+        let _ = rename_with_exdev_fallback(&backup_path, &staged.target);
         return Err(Error::Io { path: staged.target.clone(), source: e });
     }
 
@@ -225,7 +225,31 @@ fn commit_one(staged: &Staged, nonces: &NonceGen) -> Result<Committed> {
 
 fn rollback_committed(committed: &[Committed]) {
     for c in committed.iter().rev() {
-        let _ = fs::rename(&c.backup_path, &c.target);
+        let _ = rename_with_exdev_fallback(&c.backup_path, &c.target);
+    }
+}
+
+/// Rename `src` to `dst` with a copy + fsync + unlink fallback when
+/// the kernel rejects the rename with `EXDEV` (cross-device link).
+/// Same-directory renames inside a normal filesystem never hit this
+/// path; overlayfs, unionfs, bind-mounts with mismatched lowerdirs,
+/// FUSE backends, and certain container layouts can return EXDEV even
+/// for what looks lexically like a sibling rename, so we degrade to a
+/// non-atomic copy + remove rather than aborting the apply.
+fn rename_with_exdev_fallback(src: &Path, dst: &Path) -> std::io::Result<()> {
+    match fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            fs::copy(src, dst)?;
+            // Best-effort fsync the copy so it survives a crash before
+            // the source unlink lands; a failure here is non-fatal —
+            // the caller already has the pre-image as a backup.
+            if let Ok(file) = std::fs::File::open(dst) {
+                let _ = file.sync_all();
+            }
+            fs::remove_file(src)
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -327,7 +351,7 @@ pub fn recover_sweep<P: AsRef<Path>>(roots: &[P]) -> Result<RecoverySummary> {
             continue;
         }
         if let Some((_, newest)) = group.backups.pop() {
-            match fs::rename(&newest, &target).io_ctx(&newest) {
+            match rename_with_exdev_fallback(&newest, &target).io_ctx(&newest) {
                 Ok(()) => summary.backups_restored += 1,
                 Err(e) => {
                     if first_error.is_none() {
