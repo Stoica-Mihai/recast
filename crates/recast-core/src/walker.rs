@@ -6,12 +6,13 @@
 //! `!pattern` works as a per-invocation exclude.
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 use ignore::types::TypesBuilder;
+use ignore::{WalkBuilder, WalkState};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Filters applied while walking `roots`.
 ///
@@ -34,23 +35,69 @@ pub struct WalkOptions {
 /// ignore crate) honoring `opts`. Directories, symlinks (unless
 /// `follow_symlinks` is set), and anything filtered out by ignore /
 /// globs / types are skipped.
+///
+/// Uses [`ignore::WalkParallel`] so the walk honors the surrounding
+/// rayon pool's thread count instead of running single-threaded
+/// regardless of `--threads N`. Output is sorted at the end so callers
+/// (and snapshot tests) get a deterministic listing.
 pub fn walk_paths<P: AsRef<Path>>(roots: &[P], opts: &WalkOptions) -> Result<Vec<PathBuf>> {
-    let mut iter = if let Some(first) = roots.first() {
+    let builder = build_walker(roots, opts)?;
+    let collected: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    let first_error: Mutex<Option<ignore::Error>> = Mutex::new(None);
+
+    builder.build_parallel().run(|| {
+        Box::new(|result| match result {
+            Ok(entry) => {
+                if matches!(entry.file_type(), Some(ft) if ft.is_file())
+                    && let Ok(mut sink) = collected.lock()
+                {
+                    sink.push(entry.into_path());
+                }
+                WalkState::Continue
+            }
+            Err(e) => {
+                if let Ok(mut slot) = first_error.lock()
+                    && slot.is_none()
+                {
+                    *slot = Some(e);
+                }
+                WalkState::Quit
+            }
+        })
+    });
+
+    if let Some(e) = first_error.into_inner().ok().flatten() {
+        return Err(Error::Walk(e));
+    }
+    let mut out = collected.into_inner().unwrap_or_default();
+    out.sort();
+    Ok(out)
+}
+
+/// Build the [`WalkBuilder`] for `roots` with `opts` applied. Pulled
+/// out of the public entry point so the parallel walker's setup stays
+/// readable; nothing else calls it.
+fn build_walker<P: AsRef<Path>>(roots: &[P], opts: &WalkOptions) -> Result<WalkBuilder> {
+    let mut builder = if let Some(first) = roots.first() {
         WalkBuilder::new(first.as_ref())
     } else {
         WalkBuilder::new(".")
     };
     for extra in roots.iter().skip(1) {
-        iter.add(extra.as_ref());
+        builder.add(extra.as_ref());
     }
-    iter.hidden(!opts.hidden)
+    builder
+        .hidden(!opts.hidden)
         .ignore(!opts.no_ignore)
         .git_ignore(!opts.no_ignore)
         .git_global(!opts.no_ignore)
         .git_exclude(!opts.no_ignore)
         .require_git(false)
         .parents(!opts.no_ignore)
-        .follow_links(opts.follow_symlinks);
+        .follow_links(opts.follow_symlinks)
+        // Honor the surrounding rayon pool's thread count. Falls back
+        // to ignore's own default (num_cpus) outside a rayon scope.
+        .threads(rayon::current_num_threads().max(1));
 
     if !opts.types.is_empty() || !opts.types_not.is_empty() {
         let mut tb = TypesBuilder::new();
@@ -61,7 +108,7 @@ pub fn walk_paths<P: AsRef<Path>>(roots: &[P], opts: &WalkOptions) -> Result<Vec
         for t in &opts.types_not {
             tb.negate(t);
         }
-        iter.types(tb.build()?);
+        builder.types(tb.build()?);
     }
 
     if !opts.globs.is_empty() {
@@ -70,23 +117,10 @@ pub fn walk_paths<P: AsRef<Path>>(roots: &[P], opts: &WalkOptions) -> Result<Vec
         for g in &opts.globs {
             ob.add(g)?;
         }
-        iter.overrides(ob.build()?);
+        builder.overrides(ob.build()?);
     }
 
-    let mut out = Vec::new();
-    for entry in iter.build() {
-        let entry = entry?;
-        let ft = match entry.file_type() {
-            Some(ft) => ft,
-            None => continue,
-        };
-        if !ft.is_file() {
-            continue;
-        }
-        out.push(entry.into_path());
-    }
-    out.sort();
-    Ok(out)
+    Ok(builder)
 }
 
 #[cfg(test)]
