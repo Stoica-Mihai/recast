@@ -7,6 +7,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.9] — 2026-05-22
+
+Post-`0.1.8` follow-through: a deep audit pass over the previously
+untouched modules (walker, lockfile, json, rewrite, script, parallel),
+the `recast-mcp` server crate for MCP-aware AI agents, a nightly
+fuzz workflow, a criterion regression gate on PRs, and the symlink +
+concurrent-apply regression tests that pin down behavior the audit
+exposed.
+
 ### Added
 
 - **`recast-mcp` crate.** Model Context Protocol server that exposes
