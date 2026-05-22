@@ -1,0 +1,62 @@
+name: bench
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  deployments: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  bench:
+    name: criterion regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+
+      - name: Run criterion benches
+        # `--output-format bencher` makes criterion print one
+        # `test … bench: N ns/iter (+/- M)` line per measurement, which
+        # github-action-benchmark parses with `tool: 'cargo'`.
+        run: |
+          cargo bench -p recast-core --features lang-rust,script --bench engine -- \
+            --output-format bencher | tee bench-output.txt
+
+      - name: Store / compare against baseline
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: recast-core engine benches
+          tool: 'cargo'
+          output-file-path: bench-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Push the new baseline to gh-pages only on main; PRs just
+          # compare and comment.
+          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # Fail the PR if any benchmark slows by >50%. Tune up
+          # (stricter) once a stable baseline accumulates.
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: ${{ github.event_name == 'pull_request' }}
+          summary-always: true
+          # Keep the last 100 runs visible in the dashboard.
+          max-items-in-chart: 100
