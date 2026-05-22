@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779461564658,
+  "lastUpdate": 1779462025957,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -233,6 +233,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 7228475,
             "range": "± 181184",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "0db4938962b83221697f9fd0be495d650980fc6c",
+          "message": "test(mcp): in-process unit tests for tool handlers\n\n11 #[tokio::test]s in crates/recast-mcp/src/server_tests.rs call\neach tool handler directly with constructed Parameters<T> values —\nno JSON-RPC framing, no transport, no subprocess. Faster than the\nstdio smoke tests and runs in the normal `cargo test` suite.\n\nCoverage:\n- preview emits plan JSON, dry-run leaves files untouched\n- apply writes new content to disk, returns apply JSON\n- zero matches on a convergent rewrite returns already_applied\n  (success outcome, not a guard violation)\n- at_least > actual matches surfaces TooFewMatches with\n  kind=\"too_few_matches\" in McpError data\n- non-convergent rewrite (a -> aa) surfaces NonConvergent with\n  kind=\"non_convergent\"\n- script_source drives Rhai callback per match\n- mutual exclusion: script_source + script_path is rejected\n- structural ast_pattern compiles to query and runs end-to-end\n- mutual exclusion: query + ast_pattern is rejected\n- requires one of query / ast_pattern\n- recover with no leftovers returns zero summary\n\nTotal test count 136 -> 147.",
+          "timestamp": "2026-05-22T17:57:50+03:00",
+          "tree_id": "378f32a851ffa20a5c592b1317a57b39993d2a08",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/0db4938962b83221697f9fd0be495d650980fc6c"
+        },
+        "date": 1779462025024,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2323,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 608020,
+            "range": "± 4063",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1490886,
+            "range": "± 96091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2127067,
+            "range": "± 143831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 3392171,
+            "range": "± 141662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3168376,
+            "range": "± 24384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3284007,
+            "range": "± 114784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4250817,
+            "range": "± 164243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 6975865,
+            "range": "± 211853",
             "unit": "ns/iter"
           }
         ]
