@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779462344058,
+  "lastUpdate": 1779462939964,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -389,6 +389,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 7362591,
             "range": "± 180767",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "3d5b5a1ed0d5cd181efc04a47e073a521a949f29",
+          "message": "chore: bump to 0.1.10 — dedicated recast-mcp README on crates.io\n\nrecast-mcp's crates.io page was rendering the CLI-focused root\nREADME (it told visitors to `cargo install recast-cli`). Added\ncrates/recast-mcp/README.md with MCP-specific install, Claude\nDesktop / Cursor config snippets, the four tools, and the safety\npitch. Pointed crates/recast-mcp/Cargo.toml at the new file.\n\nWorkspace version bumped to 0.1.10 so the new README ships to\ncrates.io on the next release. recast-cli and recast-core\nrepublish alongside (no material change in either); they continue\nto share the root README, which is close enough to their actual\naudience.",
+          "timestamp": "2026-05-22T18:12:48+03:00",
+          "tree_id": "1ca02c15d5244bd55f7429bc1757dddaf710bbb6",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/3d5b5a1ed0d5cd181efc04a47e073a521a949f29"
+        },
+        "date": 1779462939447,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2405,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 618218,
+            "range": "± 3864",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1682817,
+            "range": "± 124002",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2423639,
+            "range": "± 93571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 3805426,
+            "range": "± 121019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3203090,
+            "range": "± 19536",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3446264,
+            "range": "± 132079",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4598873,
+            "range": "± 147820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 7472476,
+            "range": "± 243502",
             "unit": "ns/iter"
           }
         ]
