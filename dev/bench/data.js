@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779459023685,
+  "lastUpdate": 1779461136642,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -77,6 +77,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 7408378,
             "range": "± 192226",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "5598fafc2ae4df548843204bb0758161b22e6109",
+          "message": "docs: README \"For AI agents\" section + CHANGELOG entry for recast-mcp\n\nREADME gains a top-level \"For AI agents (MCP server)\" section that\nexplains the install path, the Claude Desktop config snippet, the\nfour tools, and the safety pitch (\"why agents reach for it instead\nof write_file loops or sed\"). Test-count headline bumped 130 → 136\nto reflect the symlink + concurrent-apply regression tests added in\nrecent commits.\n\nCHANGELOG [Unreleased] section accumulates everything since 0.1.8:\nthe MCP server, walker symlink tests, concurrent-apply tests, fuzz\n+ bench workflows, walker WalkParallel switch, label_for_path fast\npath, from_apply header collapse, lockfile error classification,\ncanonical workspace lock derivation, and the EXDEV rename fallback.",
+          "timestamp": "2026-05-22T17:42:53+03:00",
+          "tree_id": "1f7465fdac4541ba94f14fe138a0e07740848d96",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/5598fafc2ae4df548843204bb0758161b22e6109"
+        },
+        "date": 1779461136027,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2360,
+            "range": "± 222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 619626,
+            "range": "± 10994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1679617,
+            "range": "± 143604",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2452557,
+            "range": "± 86372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 3828455,
+            "range": "± 153260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3175926,
+            "range": "± 20123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3414444,
+            "range": "± 181143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4557566,
+            "range": "± 138709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 7524582,
+            "range": "± 247072",
             "unit": "ns/iter"
           }
         ]
