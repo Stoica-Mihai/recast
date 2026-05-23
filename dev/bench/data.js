@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779539491463,
+  "lastUpdate": 1779573534900,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -545,6 +545,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 7279774,
             "range": "± 227983",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "00ed3a4c71ddf64f4d566574d7351e47e47d00f7",
+          "message": "docs(mcp): \\n footgun warning + refined site-count threshold\n\nReal-session feedback from a Claude Code user surfaced two\ndocumentation gaps in the v0.1.11 tool descriptions:\n\n1. The replacement template is a regex template, not a C string —\n   `\\n` / `\\t` are NOT decoded. Agent passed `\"foo\\nbar\"` in JSON,\n   recast wrote literal backslash-n to disk, build broke. Doc fix:\n   new FOOTGUN block in recast_preview / recast_apply descriptions\n   spells out the rule (use real LFs in the JSON string value, not\n   `\\n` escape) and notes that backrefs ARE interpolated.\n\n2. The flat \"3+ files\" threshold under-served simple 4-site edits\n   where Edit is genuinely faster than the recast preview-then-apply\n   round-trip. New WHEN TO USE / WHEN NOT TO USE blocks distinguish:\n   5+ sites for simple text changes; any count for shape-sensitive\n   changes (use recast_structural); any count when atomicity is\n   required. Agent can now opt out for small jobs without abandoning\n   recast for the harder cases.\n\nDoc-only patch release — no engine changes, no API changes.",
+          "timestamp": "2026-05-24T00:56:30+03:00",
+          "tree_id": "015f784fc6bd1d924b66ce08d129088676539d92",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/00ed3a4c71ddf64f4d566574d7351e47e47d00f7"
+        },
+        "date": 1779573534122,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2327,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 607925,
+            "range": "± 2860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1665836,
+            "range": "± 143061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2246884,
+            "range": "± 208222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 3107023,
+            "range": "± 175163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3003682,
+            "range": "± 11610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3061755,
+            "range": "± 76652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 3633826,
+            "range": "± 62352",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 6436914,
+            "range": "± 135823",
             "unit": "ns/iter"
           }
         ]
