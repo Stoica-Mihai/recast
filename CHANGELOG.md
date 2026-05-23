@@ -7,6 +7,30 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.12] — 2026-05-22
+
+Real-session feedback from a Claude Code user surfaced two
+documentation gaps in v0.1.11's tool descriptions. Doc-only patch
+release.
+
+### Changed
+
+- **MCP tool descriptions document the `\\n` footgun.**
+  `recast_apply` / `recast_preview` `replacement` is a regex
+  template — backreferences (`$1`, `${name}`) are interpolated but
+  C-style escape sequences (`\\n`, `\\t`) are NOT decoded. An agent
+  passing `"foo\\nbar"` ends up writing literal backslash-n on disk,
+  not a newline. Descriptions now carry a `FOOTGUN —` block telling
+  callers to use real LFs in the JSON string value, not the `\\n`
+  escape.
+- **Refined "when to use" threshold.** The flat "3+ files" rule
+  under-served simple 4-site edits where `Edit` is genuinely faster.
+  Descriptions now distinguish: **5+ sites** for simple text changes;
+  **any count** for shape-sensitive changes (use
+  `recast_structural`); **any count** when atomicity is required.
+  Added an explicit `WHEN NOT TO USE` block so the agent can opt
+  out without abandoning recast entirely for the harder cases.
+
 ## [0.1.11] — 2026-05-22
 
 Agent-adoption pass for `recast-mcp`: real-world Claude Code survey

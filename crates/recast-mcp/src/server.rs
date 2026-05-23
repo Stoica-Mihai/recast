@@ -53,10 +53,23 @@ impl RecastServer {
                        (paths, match counts, unified diffs) without touching disk. Always call \
                        this before `recast_apply` for any non-trivial change.\n\
                        \n\
-                       WHEN TO USE: any time the same syntactic change lands in 2+ files. \
-                       Beats Edit-tool loops + sed on every axis (atomicity, zero-match guard, \
-                       idempotency, rollback). If you're about to write the same edit by hand \
-                       in 3+ places, call this first.\n\
+                       WHEN TO USE:\n\
+                       - Same simple text change in 5+ files (rename, version bump, import \
+                       path migration). Below that, `Edit` is usually faster.\n\
+                       - ANY shape-sensitive change (struct literal, enum variant, fn \
+                       signature) — use `recast_structural` instead, but the decision is the \
+                       same: regex on AST shapes is fragile.\n\
+                       - Atomicity required (the change must not half-apply on failure).\n\
+                       \n\
+                       WHEN NOT TO USE: 1-4 isolated edits where you can see all callsites \
+                       and the change is simple text. The escape-encoding round-trip and \
+                       preview-then-apply two-step costs more than 4 `Edit` calls would.\n\
+                       \n\
+                       FOOTGUN — `replacement` is NOT escape-decoded. `\\n` in the JSON \
+                       value becomes literal backslash-n on disk, NOT a newline. To insert a \
+                       newline, put a real LF in the JSON string value (multiline JSON \
+                       string), not the `\\n` escape. Same for `\\t`. Backreferences `$1` / \
+                       `${name}` ARE interpolated.\n\
                        \n\
                        EXAMPLES:\n\
                        Rename `OldName` → `NewName` across src/ (literal):\n\
@@ -87,6 +100,22 @@ impl RecastServer {
                        Same argument shape as `recast_preview`; call preview first to inspect \
                        the diff, then call this to land it.\n\
                        \n\
+                       WHEN TO USE:\n\
+                       - Same simple text change in 5+ files (rename, version bump, import \
+                       path migration). Below that, `Edit` is usually faster.\n\
+                       - ANY shape-sensitive change → reach for `recast_structural`.\n\
+                       - Atomicity required (the change must not half-apply).\n\
+                       \n\
+                       WHEN NOT TO USE: 1-4 isolated edits where `Edit` with enough context \
+                       fits in the same number of calls and avoids the escape-encoding \
+                       round-trip.\n\
+                       \n\
+                       FOOTGUN — `replacement` is NOT escape-decoded. `\\n` in the JSON \
+                       value becomes literal backslash-n on disk, NOT a newline. To insert \
+                       a newline, put a real LF in the JSON string value, not the `\\n` \
+                       escape. Same for `\\t`. Backreferences `$1` / `${name}` ARE \
+                       interpolated.\n\
+                       \n\
                        SAFETY (already enforced — no extra flags needed):\n\
                        - Two-phase commit: every file staged as sibling temp + fsync, then \
                        renamed into place. Any per-file failure rolls back every \
@@ -100,7 +129,8 @@ impl RecastServer {
                        backup.\n\
                        \n\
                        USE INSTEAD OF: Edit-tool loops, sed -i across files, write_file \
-                       rewriting whole files for a one-token change, hand-rolled find+replace.\n\
+                       rewriting whole files for a one-token change, hand-rolled find+replace \
+                       — once the site count + atomicity needs justify it (see WHEN TO USE).\n\
                        \n\
                        EXAMPLES: see `recast_preview` description — args are identical.")]
     async fn recast_apply(
