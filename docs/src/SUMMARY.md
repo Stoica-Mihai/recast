@@ -13,6 +13,10 @@
 - [Script mode (`--script`)](./script-mode.md)
 - [Structural mode (`--lang` / `--query` / `--ast`)](./structural-mode.md)
 
+# For AI agents
+
+- [Agent rules snippet](./agent-rules.md)
+
 # Reference
 
 - [CLI flags](./cli-reference.md)

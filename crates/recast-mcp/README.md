@@ -67,6 +67,20 @@ calls. Engine errors propagate as MCP errors with a stable `kind`
 discriminator (`too_few_matches`, `non_convergent`, `io`, …) — agents
 branch on `kind` instead of string-matching messages.
 
+## Make the agent actually use it
+
+Installing the server is half the job — the LLM still has to *pick*
+recast over its default `Edit` / `write_file` muscle memory. Drop the
+[agent-rules snippet] into your project's instructions file
+(`AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `.clinerules`, …) so the
+agent's system prompt carries the decision rule:
+
+> If you're about to make the same syntactic change in 3+ files, call
+> `recast_preview` first. Don't fall back to per-file `Edit` if it
+> returns 0 matches — iterate the pattern.
+
+[agent-rules snippet]: https://stoica-mihai.github.io/recast/agent-rules.html
+
 ## Why agents reach for it
 
 Multi-file rewrites driven by `write_file` loops, `sed`, or python

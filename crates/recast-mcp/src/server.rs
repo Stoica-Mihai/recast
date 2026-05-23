@@ -49,13 +49,32 @@ impl RecastServer {
 
 #[tool_router]
 impl RecastServer {
-    #[tool(description = "Preview a multi-file regex rewrite without writing anything to disk. \
-                       Returns a per-file plan with match counts and rendered unified diffs. \
-                       The `--at-least 1` guard fires by default so silent zero-match runs \
-                       become errors. Pass `script_source` or `script_path` to drive each \
-                       replacement through a Rhai callback instead of a static template. \
-                       Use this before `recast_apply` to verify the pattern does what you \
-                       expect.")]
+    #[tool(description = "Dry-run a multi-file regex/literal rewrite. Returns the per-file plan \
+                       (paths, match counts, unified diffs) without touching disk. Always call \
+                       this before `recast_apply` for any non-trivial change.\n\
+                       \n\
+                       WHEN TO USE: any time the same syntactic change lands in 2+ files. \
+                       Beats Edit-tool loops + sed on every axis (atomicity, zero-match guard, \
+                       idempotency, rollback). If you're about to write the same edit by hand \
+                       in 3+ places, call this first.\n\
+                       \n\
+                       EXAMPLES:\n\
+                       Rename `OldName` → `NewName` across src/ (literal):\n\
+                       \x20  { \"pattern\":\"OldName\", \"replacement\":\"NewName\",\n\
+                       \x20    \"paths\":[\"src/\"], \"literal\":true }\n\
+                       \n\
+                       Insert `, slot` as a second arg of `pane_title(...)` everywhere:\n\
+                       \x20  { \"pattern\":\"pane_title\\\\(([^)]+)\\\\)\",\n\
+                       \x20    \"replacement\":\"pane_title($1, slot)\" }\n\
+                       \n\
+                       Bump every version triplet via Rhai callback:\n\
+                       \x20  { \"pattern\":\"\\\\d+\\\\.\\\\d+\\\\.\\\\d+\",\n\
+                       \x20    \"script_source\":\"let v = whole.split('.'); v[2] = (parse_int(v[2])+1).to_string(); v.reduce(|a,b| a+\\\".\\\"+b)\",\n\
+                       \x20    \"replacement\":\"\" }\n\
+                       \n\
+                       For shape-sensitive rewrites (struct literals, enum variants, fn \
+                       signatures) use `recast_structural` instead — regex on AST shapes is \
+                       fragile.")]
     async fn recast_preview(
         &self,
         Parameters(args): Parameters<RewriteArgs>,
@@ -64,13 +83,26 @@ impl RecastServer {
         Ok(CallToolResult::success(vec![Content::json(json::from_plan(&plan))?]))
     }
 
-    #[tool(description = "Atomically apply a multi-file regex rewrite to disk. Two-phase commit \
-                       with rollback: every change is staged as a sibling temp + fsync, then \
-                       renamed into place; any per-file failure restores every already-renamed \
-                       original from its backup. Surfaces non-convergent patterns (e.g. \
-                       `a` -> `aa`) before any write. Same `script_source` / `script_path` \
-                       support as `recast_preview` for dynamic replacements. Use \
-                       `recast_preview` first to inspect the diff.")]
+    #[tool(description = "Atomically apply a multi-file regex/literal rewrite to disk. \
+                       Same argument shape as `recast_preview`; call preview first to inspect \
+                       the diff, then call this to land it.\n\
+                       \n\
+                       SAFETY (already enforced — no extra flags needed):\n\
+                       - Two-phase commit: every file staged as sibling temp + fsync, then \
+                       renamed into place. Any per-file failure rolls back every \
+                       already-renamed original from its backup. End state is either fully \
+                       rewritten or bit-identical to the pre-image.\n\
+                       - Convergence check: refuses patterns whose replacement still matches \
+                       (e.g. `a` → `aa`) so re-runs can't corrupt the tree.\n\
+                       - Match-count guard: default `at_least=1` turns silent zero-match runs \
+                       into typed errors.\n\
+                       - Crash recovery: if killed mid-apply, `recast_recover` restores from \
+                       backup.\n\
+                       \n\
+                       USE INSTEAD OF: Edit-tool loops, sed -i across files, write_file \
+                       rewriting whole files for a one-token change, hand-rolled find+replace.\n\
+                       \n\
+                       EXAMPLES: see `recast_preview` description — args are identical.")]
     async fn recast_apply(
         &self,
         Parameters(args): Parameters<RewriteArgs>,
@@ -80,14 +112,33 @@ impl RecastServer {
         Ok(CallToolResult::success(vec![Content::json(json::from_apply(&plan, &outcome))?]))
     }
 
-    #[tool(description = "Structural rewrite via tree-sitter. Pass `ast_pattern` to write \
-                       the match in friendly target-language syntax with `$NAME` / `$$$BODY` \
-                       placeholders (the engine compiles it to a tree-sitter Query). Or pass \
-                       `query` to supply a raw S-expression directly. Exactly one of `query` / \
-                       `ast_pattern` is required. `template` is the rewrite, captures bound \
-                       as `$name` / `${name}`. Pass `apply: true` to write; default is \
-                       dry-run. Supported langs: rust, ts, tsx, js, python, bash, go, json, \
-                       markdown.")]
+    #[tool(description = "AST-aware multi-file rewrite via tree-sitter. Use whenever the \
+                       change is shape-sensitive — adding a field to every enum variant, \
+                       renaming a function and all call sites, swapping arg order, reshaping \
+                       struct literals. Regex on AST shapes is fragile; this is not.\n\
+                       \n\
+                       SUPPORTED LANGS: rust, ts, tsx, js, python, bash, go, json, markdown.\n\
+                       \n\
+                       PATTERN SYNTAX (`ast_pattern`): write the match in normal \
+                       target-language source with `$NAME` for single-node placeholders and \
+                       `$$$NAME` for variadic subtree placeholders. The engine compiles it \
+                       to a tree-sitter Query. `template` is the rewrite; reference captures \
+                       as `$NAME` / `${NAME}`.\n\
+                       \n\
+                       EXAMPLES:\n\
+                       Rename every 0-arg fn `foo()` to `foo_v2()`:\n\
+                       \x20  { \"lang\":\"rust\", \"ast_pattern\":\"fn $NAME() {}\",\n\
+                       \x20    \"template\":\"fn ${NAME}_v2() {}\", \"apply\":true }\n\
+                       \n\
+                       Add `direction: None` field to every `ClientMessage::SplitPane { ... }` \
+                       literal:\n\
+                       \x20  { \"lang\":\"rust\",\n\
+                       \x20    \"ast_pattern\":\"ClientMessage::SplitPane { $$$REST }\",\n\
+                       \x20    \"template\":\"ClientMessage::SplitPane { direction: None, $REST }\",\n\
+                       \x20    \"apply\":true }\n\
+                       \n\
+                       Default `apply:false` returns a dry-run plan. Exactly one of \
+                       `query` (raw S-expression) or `ast_pattern` (friendly form) is required.")]
     async fn recast_structural(
         &self,
         Parameters(args): Parameters<StructuralArgs>,
@@ -115,11 +166,16 @@ impl RecastServer {
         }
     }
 
-    #[tool(description = "Reconcile leftover `.recast.bak.*` / `.recast.tmp.*` siblings from \
-                       an interrupted `recast_apply` (panic, signal, power loss). Restores \
-                       from backup when the target is missing; deletes stale temps and \
-                       backups when the target is present. Idempotent — safe to run \
-                       proactively after any failed apply.")]
+    #[tool(description = "Reconcile leftover `.recast.bak.*` / `.recast.tmp.*` sibling files \
+                       from an interrupted `recast_apply` (panic, signal, power loss, OOM). \
+                       Restores from backup when the target is missing; deletes stale temps \
+                       and backups when the target is present. Idempotent — safe to run \
+                       proactively after any failed apply.\n\
+                       \n\
+                       WHEN TO USE: only after a previous `recast_apply` was killed mid-run, \
+                       or when you see `.recast.bak.*` / `.recast.tmp.*` files lingering in \
+                       the tree. Normal applies clean up after themselves; you don't need to \
+                       call this routinely.")]
     async fn recast_recover(
         &self,
         Parameters(args): Parameters<RecoverArgs>,
@@ -137,10 +193,34 @@ impl ServerHandler for RecastServer {
             .with_server_info(Implementation::from_build_env())
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
             .with_instructions(
-                "Safe, atomic, multi-file rewrites. Prefer `recast_preview` -> inspect diff -> \
-                 `recast_apply` over hand-rolled write_file loops or sed; the engine catches \
-                 silent zero-match runs, refuses non-convergent patterns, and rolls back \
-                 mid-commit failures atomically."
+                "Safe, atomic, multi-file rewrites. Read this in full — the tool \
+                 descriptions are short, the decision rule is here.\n\
+                 \n\
+                 DECISION RULE: If you're about to make the same syntactic change in 3+ \
+                 files (renames, struct-field additions, fn-signature changes, enum-variant \
+                 reshapes, version bumps), call `recast_preview` FIRST. Do NOT default to \
+                 Edit / write_file loops or sed for repeated transforms — those silently \
+                 fail on zero matches, can't roll back mid-failure, and blast-radius across \
+                 unintended sites.\n\
+                 \n\
+                 TWO-STEP WORKFLOW:\n\
+                 1. `recast_preview` → inspect the per-file plan + diffs.\n\
+                 2. If the plan looks right, call `recast_apply` with identical args.\n\
+                 If `recast_preview` returns 0 matches, the pattern is wrong — iterate the \
+                 pattern, do NOT fall back to per-file Edit.\n\
+                 \n\
+                 TOOL PICK:\n\
+                 - `recast_apply` (regex / literal / Rhai script) for text-level rewrites \
+                 anywhere — works on any language.\n\
+                 - `recast_structural` (tree-sitter `ast_pattern`) when the change is \
+                 shape-sensitive (struct literals, enum variants, fn signatures, AST node \
+                 reshapes). Supported langs: rust, ts, tsx, js, python, bash, go, json, \
+                 markdown.\n\
+                 - `recast_recover` only after a prior `recast_apply` was killed mid-run.\n\
+                 \n\
+                 SAFETY ALREADY ON: atomic two-phase commit with rollback on per-file \
+                 failure, convergence check (refuses `a` → `aa`), `at_least=1` guard \
+                 (refuses silent zero-match runs), crash-recovery sweep, workspace lock."
                     .to_owned(),
             )
     }

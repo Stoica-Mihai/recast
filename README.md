@@ -315,7 +315,14 @@ commit rolls back mid-failure, and every response is structured JSON
 so the agent can branch on `kind` without string-matching error
 messages.
 
+To actually make the LLM pick recast over its default `Edit` muscle
+memory, paste the [agent rules snippet][agent-rules] into your
+project's `AGENTS.md` / `CLAUDE.md` / `.cursor/rules`. The snippet
+encodes the "3+ files → recast" decision rule the agent's
+tool-ranker needs to flip its default.
+
 [Model Context Protocol]: https://modelcontextprotocol.io
+[agent-rules]: https://stoica-mihai.github.io/recast/agent-rules.html
 
 ### Benchmarks
 
