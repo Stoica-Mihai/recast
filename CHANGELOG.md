@@ -7,6 +7,35 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.11] — 2026-05-22
+
+Agent-adoption pass for `recast-mcp`: real-world Claude Code survey
+showed the agent defaulting to `Edit` / `write_file` loops even with
+the MCP server installed. Three documentation-shaped fixes encode the
+decision rule at every surface the agent reads.
+
+### Changed
+
+- **MCP tool descriptions rewritten with worked examples + decision
+  rule.** `recast_preview`, `recast_apply`, `recast_structural`, and
+  `recast_recover` now embed 2-3 concrete JSON invocations each plus
+  the "if 3+ files, call recast first" trigger. The LLM tool-ranker
+  reads these on every selection step; example-rich descriptions
+  reduce uncertainty enough to flip the default away from `Edit`.
+- **`ServerInfo.instructions` expanded** from one sentence into a
+  decision-rule + two-step-workflow block. The MCP client injects
+  this into its system prompt during handshake, so the heuristic
+  reaches the agent before any tool call is considered.
+
+### Added
+
+- **`docs/src/agent-rules.md`** — copy-pasteable rules snippet for
+  every common agent runtime (Claude Code, Cursor, Continue, Cline,
+  Aider). Users drop the block into their project's `AGENTS.md` /
+  `.cursorrules` / equivalent so the in-project system prompt
+  doubles up with the MCP server's instructions field. Linked from
+  both the root README and the `recast-mcp` crates.io README.
+
 ## [0.1.10] — 2026-05-22
 
 Hotfix: replace the placeholder root README on the `recast-mcp`
