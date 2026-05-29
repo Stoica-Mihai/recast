@@ -74,6 +74,33 @@ The capture named `@root` (or, absent that, the outermost capture in
 each match) defines the byte range to replace. Templates can reference
 any captured node by name (`$id`, `${id}`).
 
+## Deleting items with their attributes (`--include-leading-attrs`)
+
+Deleting a function with a plain match replaces only the
+`function_item` node — its `#[test]` / `#[cfg(...)]` attributes and
+`///` doc comments are siblings, so they survive as orphans:
+
+```bash
+# leaves an orphaned `#[test]` behind
+recast --lang rust --apply --ast 'fn drop_me() {}' '' '' src/
+```
+
+`--include-leading-attrs` extends each match backward over the
+contiguous run of preceding `attribute_item` / doc-comment siblings, so
+the attributes and docs go with the item:
+
+```bash
+recast --lang rust --apply --include-leading-attrs \
+  --ast 'fn drop_me() {}' '' '' src/
+```
+
+A blank line ends the run (an attribute separated from the item by an
+empty line is treated as detached and left in place), and plain `//` /
+`/* */` comments are never swallowed — only doc comments (`///`, `//!`,
+`/**`, `/*!`). The node kinds are Rust's; languages without
+`attribute_item` simply never extend. MCP: `include_leading_attrs: true`
+on `recast_structural`.
+
 ## Error messages
 
 When a query fails to compile, recast surfaces a line/column-pinned error:

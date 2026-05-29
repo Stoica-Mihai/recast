@@ -14,7 +14,7 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 authors = ["recast contributors"]
-version = "0.1.13"
+version = "0.1.14"
 publish = true
 repository = "https://github.com/Stoica-Mihai/recast"
 homepage = "https://stoica-mihai.github.io/recast/"
@@ -55,7 +55,7 @@ rmcp = { version = "1", default-features = false }
 tokio = { version = "1", default-features = false }
 schemars = "1"
 
-recast-core = { path = "crates/recast-core", version = "=0.1.13", default-features = false }
+recast-core = { path = "crates/recast-core", version = "=0.1.14", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

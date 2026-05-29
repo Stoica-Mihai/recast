@@ -48,6 +48,7 @@ fn structural_args(path: &std::path::Path) -> StructuralArgs {
         query: None,
         ast_pattern: None,
         template: String::new(),
+        include_leading_attrs: false,
         paths: vec![path.to_string_lossy().into_owned()],
         apply: false,
         hidden: false,

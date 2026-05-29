@@ -1,8 +1,9 @@
 # Plan: post-apply syntax-regression guard + structural attr-aware delete
 
-Status: **Phase A (Feature 1, syntax-regression guard) landed in
-0.1.13.** Phase B (Feature 2, structural attr-aware delete) pending,
-target 0.1.14. Target: `recast-core` + `recast-mcp`.
+Status: **Both phases landed.** Phase A (Feature 1,
+syntax-regression guard) in 0.1.13; Phase B (Feature 2, structural
+attr-aware delete, `--include-leading-attrs`) in 0.1.14. Target:
+`recast-core` + `recast-mcp`.
 Author context: prompted by a real warp-upstream session where a
 regex `recast_apply` deleting test fns left orphaned `#[test]`
 attributes (triple-`#[test]`) and the breakage only surfaced 4

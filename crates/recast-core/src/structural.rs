@@ -235,10 +235,16 @@ struct CompiledStructural {
     query: Query,
     root_capture_idx: Option<usize>,
     template_parts: Vec<TemplatePart>,
+    include_leading_attrs: bool,
 }
 
 impl CompiledStructural {
-    fn compile(lang: Language, query_src: &str, template: &str) -> Result<Self> {
+    fn compile(
+        lang: Language,
+        query_src: &str,
+        template: &str,
+        include_leading_attrs: bool,
+    ) -> Result<Self> {
         let ts_lang = lang.ts_language();
         // Probe the language by configuring a throwaway parser. Catches
         // ABI mismatch up front so the per-thread workers can rely on
@@ -252,7 +258,7 @@ impl CompiledStructural {
         let root_capture_idx = capture_names.iter().position(|n| *n == "root");
         let template_parts = parse_template(template, &capture_names)?;
 
-        Ok(Self { ts_lang, query, root_capture_idx, template_parts })
+        Ok(Self { ts_lang, query, root_capture_idx, template_parts, include_leading_attrs })
     }
 
     fn new_parser(&self) -> Parser {
@@ -290,11 +296,12 @@ impl CompiledStructural {
                     .ok_or_else(|| Error::StructuralQuery("match bound no captures".into()))?,
             };
             let replacement = self.render(source, m.captures)?;
-            hits.push(Hit {
-                start: primary.node.start_byte(),
-                end: primary.node.end_byte(),
-                replacement,
-            });
+            let start = if self.include_leading_attrs {
+                extend_start_over_attrs(primary.node, source)
+            } else {
+                primary.node.start_byte()
+            };
+            hits.push(Hit { start, end: primary.node.end_byte(), replacement });
         }
         hits.sort_by_key(|h| h.start);
 
@@ -425,10 +432,66 @@ pub fn structural_rewrite(
     query_src: &str,
     template: &str,
 ) -> Result<StructuralOutcome> {
-    let compiled = CompiledStructural::compile(lang, query_src, template)?;
+    structural_rewrite_attrs(lang, source, query_src, template, false)
+}
+
+/// Variant of [`structural_rewrite`] that, when `include_leading_attrs`
+/// is set, extends each replacement range backward over the contiguous
+/// run of preceding `attribute_item` / doc-comment siblings — so
+/// deleting a function also removes its `#[test]` / `///` lines instead
+/// of orphaning them. A blank-line gap or a non-attr/non-doc sibling
+/// ends the run. Node kinds are tree-sitter-rust's; languages without
+/// those kinds simply never extend (no-op).
+pub(crate) fn structural_rewrite_attrs(
+    lang: Language,
+    source: &str,
+    query_src: &str,
+    template: &str,
+    include_leading_attrs: bool,
+) -> Result<StructuralOutcome> {
+    let compiled = CompiledStructural::compile(lang, query_src, template, include_leading_attrs)?;
     let mut parser = compiled.new_parser();
     let mut cursor = QueryCursor::new();
     compiled.apply(&mut parser, &mut cursor, source)
+}
+
+/// Walk backward from `node` over the contiguous run of preceding
+/// `attribute_item` / doc-comment siblings, returning the start byte of
+/// the earliest one in the run (or `node.start_byte()` if none). A
+/// blank line (two or more newlines in the inter-sibling gap) breaks the
+/// run, preserving intentional separation.
+fn extend_start_over_attrs(node: Node, source: &str) -> usize {
+    let bytes = source.as_bytes();
+    let mut start = node.start_byte();
+    let mut anchor = node;
+    while let Some(prev) = anchor.prev_sibling() {
+        if !is_swallowable_sibling(&prev, bytes) {
+            break;
+        }
+        let gap = &source[prev.end_byte()..anchor.start_byte()];
+        if gap.matches('\n').count() >= 2 {
+            break;
+        }
+        start = prev.start_byte();
+        anchor = prev;
+    }
+    start
+}
+
+/// True for an `attribute_item` or a doc-style comment (`///`, `//!`,
+/// `/**`, `/*!`). Plain `//` / `/* */` comments are left in place.
+fn is_swallowable_sibling(node: &Node, source: &[u8]) -> bool {
+    match node.kind() {
+        "attribute_item" => true,
+        "line_comment" | "block_comment" => {
+            let text = &source[node.start_byte()..node.end_byte()];
+            text.starts_with(b"///")
+                || text.starts_with(b"//!")
+                || text.starts_with(b"/**")
+                || text.starts_with(b"/*!")
+        }
+        _ => false,
+    }
 }
 
 /// Multi-file structural pipeline. Walks `roots`, applies
@@ -448,6 +511,7 @@ pub fn plan_structural_rewrite<P: AsRef<Path>>(
     template: &str,
     roots: &[P],
     opts: &PlanOptions,
+    include_leading_attrs: bool,
 ) -> Result<Plan> {
     let files = walk_paths(roots, &opts.walk_options)?;
     if files.len() > opts.max_files {
@@ -455,7 +519,7 @@ pub fn plan_structural_rewrite<P: AsRef<Path>>(
     }
     let files_scanned = files.len();
 
-    let compiled = CompiledStructural::compile(lang, query, template)?;
+    let compiled = CompiledStructural::compile(lang, query, template, include_leading_attrs)?;
 
     let results: Vec<Result<Option<FileChange>>> = files
         .par_iter()

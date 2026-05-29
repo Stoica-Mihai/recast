@@ -94,6 +94,13 @@ pub(crate) struct StructuralCli {
     /// either `--query` or `--ast` with `--lang`, not both.
     #[arg(long = "ast", value_name = "PATTERN", requires = "lang", conflicts_with = "query")]
     ast_pattern: Option<String>,
+
+    /// Structural mode: extend each match backward over its contiguous
+    /// leading `#[attr]` / doc-comment lines, so deleting an item also
+    /// removes its attributes and docs instead of orphaning them. A
+    /// blank line ends the run.
+    #[arg(long, requires = "lang", action = ArgAction::SetTrue)]
+    include_leading_attrs: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -423,7 +430,14 @@ fn run_structural(cli: &Cli, lang: Language, query: &str, template: &str) -> Res
 
     let paths = cli.paths_as_pathbufs();
     let opts = cli.plan_options();
-    let plan = match plan_structural_rewrite(lang, query, template, &paths, &opts) {
+    let plan = match plan_structural_rewrite(
+        lang,
+        query,
+        template,
+        &paths,
+        &opts,
+        cli.structural.include_leading_attrs,
+    ) {
         Ok(p) => p,
         Err(e) => return handle_plan_error(e, cli.output.json),
     };

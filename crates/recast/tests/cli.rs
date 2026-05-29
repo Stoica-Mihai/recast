@@ -257,6 +257,45 @@ fn allow_syntax_errors_flag_overrides_guard() {
 }
 
 #[test]
+fn structural_include_leading_attrs_removes_attrs_and_docs() {
+    let dir = fixture(&[("lib.rs", "/// doc\n#[test]\nfn drop_me() {}\nfn keep() {}\n")]);
+    recast()
+        .arg("--apply")
+        .arg("--lang")
+        .arg("rust")
+        .arg("--ast")
+        .arg("fn drop_me() {}")
+        .arg("--include-leading-attrs")
+        .arg("ignored")
+        .arg("")
+        .arg(dir.path())
+        .assert()
+        .success();
+    let out = fs::read_to_string(dir.path().join("lib.rs")).unwrap();
+    assert!(!out.contains("#[test]"), "attr orphaned: {out:?}");
+    assert!(!out.contains("/// doc"), "doc orphaned: {out:?}");
+    assert!(out.contains("fn keep() {}"), "sibling lost: {out:?}");
+}
+
+#[test]
+fn structural_without_flag_orphans_attrs() {
+    let dir = fixture(&[("lib.rs", "#[test]\nfn drop_me() {}\nfn keep() {}\n")]);
+    recast()
+        .arg("--apply")
+        .arg("--lang")
+        .arg("rust")
+        .arg("--ast")
+        .arg("fn drop_me() {}")
+        .arg("ignored")
+        .arg("")
+        .arg(dir.path())
+        .assert()
+        .success();
+    let out = fs::read_to_string(dir.path().join("lib.rs")).unwrap();
+    assert!(out.contains("#[test]"), "attr should remain without flag: {out:?}");
+}
+
+#[test]
 fn structural_mode_unknown_language_errors() {
     recast()
         .arg("--lang")

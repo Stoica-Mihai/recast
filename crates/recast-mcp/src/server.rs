@@ -174,6 +174,12 @@ impl RecastServer {
                        \x20    \"template\":\"ClientMessage::SplitPane { direction: None, $REST }\",\n\
                        \x20    \"apply\":true }\n\
                        \n\
+                       DELETING ITEMS: set `include_leading_attrs:true` to also remove the \
+                       item's contiguous leading `#[attr]` / doc-comment lines. Without it, \
+                       deleting `fn foo` leaves an orphaned `#[test]` / `///` behind (valid \
+                       syntax, so the syntax guard won't catch it). A blank line ends the run; \
+                       plain `//` comments are never swallowed.\n\
+                       \n\
                        Default `apply:false` returns a dry-run plan. Exactly one of \
                        `query` (raw S-expression) or `ast_pattern` (friendly form) is required.")]
     async fn recast_structural(
@@ -193,8 +199,15 @@ impl RecastServer {
                 return Err(invalid_args("one of `query` or `ast_pattern` is required"));
             }
         };
-        let plan = plan_structural_rewrite(lang, &query, &args.template, &paths, &opts)
-            .map_err(to_mcp_err)?;
+        let plan = plan_structural_rewrite(
+            lang,
+            &query,
+            &args.template,
+            &paths,
+            &opts,
+            args.include_leading_attrs,
+        )
+        .map_err(to_mcp_err)?;
         if args.apply {
             let outcome = apply_changes(&plan).map_err(to_mcp_err)?;
             Ok(CallToolResult::success(vec![Content::json(json::from_apply(&plan, &outcome))?]))
@@ -357,6 +370,12 @@ pub struct StructuralArgs {
     pub ast_pattern: Option<String>,
     /// Rewrite template; captures referenced as `$name` / `${name}`.
     pub template: String,
+    /// Extend each match backward over its contiguous leading
+    /// `#[attr]` / doc-comment siblings, so deleting an item also
+    /// removes its attributes and docs instead of orphaning them. A
+    /// blank line ends the run. Default false.
+    #[serde(default)]
+    pub include_leading_attrs: bool,
     /// Paths or globs to scan.
     #[serde(default = "default_paths")]
     pub paths: Vec<String>,

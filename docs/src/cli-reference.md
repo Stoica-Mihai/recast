@@ -56,6 +56,7 @@ recast [OPTIONS] <PATTERN> <REPLACEMENT> [PATHS]...
 | `--lang LANG`          | Tree-sitter grammar (`rust`, `ts`, `python`, …)   |
 | `--query QUERY`        | Raw tree-sitter S-expression query                |
 | `--ast PATTERN`        | Friendly source-shaped pattern with `$NAME` metavars |
+| `--include-leading-attrs` | Extend each match backward over leading `#[attr]` / doc-comment lines (see [Structural mode](structural-mode.md)) |
 
 ## Output
 

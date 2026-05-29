@@ -7,6 +7,28 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.14] — 2026-05-29
+
+### Added
+
+- **Structural attr-aware delete (`--include-leading-attrs`).** In
+  structural mode, deleting or replacing an item now optionally extends
+  each match backward over the contiguous run of preceding
+  `attribute_item` / doc-comment siblings — so deleting a function also
+  removes its `#[test]` / `#[cfg(...)]` / `///` lines instead of
+  orphaning them. This is the real fix for the orphaned-attribute class
+  that the (syntactic-only) syntax-regression guard cannot catch: an
+  orphaned `#[test]` parses clean.
+  - A blank line ends the run (an attribute separated by an empty line
+    is treated as detached and left in place). Plain `//` / `/* */`
+    comments are never swallowed — only doc comments (`///`, `//!`,
+    `/**`, `/*!`).
+  - Node kinds are tree-sitter-rust's (`attribute_item`); languages
+    without those kinds never extend (no-op), so the flag is safe to set
+    in any language.
+  - CLI `--include-leading-attrs` (structural mode only); MCP
+    `include_leading_attrs: true` on `recast_structural`. Default off.
+
 ## [0.1.13] — 2026-05-29
 
 ### Added

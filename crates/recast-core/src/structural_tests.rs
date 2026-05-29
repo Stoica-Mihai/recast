@@ -91,6 +91,56 @@ fn no_matches_returns_unchanged_source() {
     assert_eq!(out.matches, 0);
 }
 
+const FOO_QUERY: &str = r#"(function_item name: (identifier) @n (#eq? @n "foo")) @root"#;
+
+#[test]
+fn include_leading_attrs_swallows_stacked_attrs_and_doc() {
+    let source = "/// doc\n#[test]\n#[cfg(x)]\nfn foo() {}\nfn bar() {}\n";
+    let out = structural_rewrite_attrs(Language::Rust, source, FOO_QUERY, "", true).unwrap();
+    assert!(!out.text.contains("#[test]"), "attr survived: {:?}", out.text);
+    assert!(!out.text.contains("#[cfg(x)]"), "attr survived: {:?}", out.text);
+    assert!(!out.text.contains("/// doc"), "doc survived: {:?}", out.text);
+    assert!(out.text.contains("fn bar() {}"), "sibling lost: {:?}", out.text);
+}
+
+#[test]
+fn without_flag_leaves_orphaned_attrs() {
+    let source = "#[test]\nfn foo() {}\nfn bar() {}\n";
+    let out = structural_rewrite_attrs(Language::Rust, source, FOO_QUERY, "", false).unwrap();
+    assert!(out.text.contains("#[test]"), "attr should remain when flag off: {:?}", out.text);
+}
+
+#[test]
+fn include_leading_attrs_handles_multiple_adjacent_deletes() {
+    let source = "fn keep_above() {}\n#[test]\nfn drop_a() {}\n#[test]\nfn drop_b() {}\nfn keep_below() {}\n";
+    let query = r#"((function_item name: (identifier) @n) @root (#match? @n "^drop_"))"#;
+    let out = structural_rewrite_attrs(Language::Rust, source, query, "", true).unwrap();
+    assert_eq!(out.matches, 2);
+    assert!(!out.text.contains("#[test]"), "orphaned attr survived: {:?}", out.text);
+    assert!(out.text.contains("fn keep_above() {}"), "keep_above lost: {:?}", out.text);
+    assert!(out.text.contains("fn keep_below() {}"), "keep_below lost: {:?}", out.text);
+    assert!(!out.text.contains("drop_a"), "drop_a survived: {:?}", out.text);
+    assert!(!out.text.contains("drop_b"), "drop_b survived: {:?}", out.text);
+}
+
+#[test]
+fn include_leading_attrs_stops_at_blank_line_gap() {
+    let source = "#[test]\n\nfn foo() {}\n";
+    let out = structural_rewrite_attrs(Language::Rust, source, FOO_QUERY, "", true).unwrap();
+    assert!(
+        out.text.contains("#[test]"),
+        "attr across blank line wrongly swallowed: {:?}",
+        out.text
+    );
+}
+
+#[test]
+fn include_leading_attrs_skips_non_doc_comment() {
+    let source = "// regular\nfn foo() {}\nfn bar() {}\n";
+    let out = structural_rewrite_attrs(Language::Rust, source, FOO_QUERY, "", true).unwrap();
+    assert!(out.text.contains("// regular"), "non-doc comment wrongly swallowed: {:?}", out.text);
+}
+
 #[test]
 fn overlapping_matches_are_skipped() {
     let source = "fn a() {}";
@@ -173,6 +223,7 @@ fn plan_structural_rejects_template_breakage() {
         "fn x( {",
         &[dir.path()],
         &PlanOptions::default(),
+        false,
     )
     .unwrap_err();
     assert!(matches!(err, Error::SyntaxRegression { .. }), "{err:?}");

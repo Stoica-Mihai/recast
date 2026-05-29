@@ -94,6 +94,7 @@ fn bench_plan_structural_rewrite(c: &mut Criterion) {
                     "X",
                     &[&root],
                     &PlanOptions { at_least: Some(0), ..PlanOptions::default() },
+                    false,
                 )
                 .unwrap();
                 std::hint::black_box(plan);
