@@ -10,18 +10,22 @@ CLI for safe, atomic, transparent multi-file text rewrites. Pure Rust.
 Tuned for LLM coding agents driving mechanical edits; equally usable by
 humans for mechanical refactors.
 
-`recast` differs from `sed` / `sd` / a Python heredoc in five places:
+`recast` differs from `sed` / `sd` / a Python heredoc in six places:
 
 1. **Match-required guard.** Default `--at-least 1` exits non-zero when
    nothing matches. Silent no-match is impossible by default.
 2. **Idempotency check.** Refuses non-convergent rewrites; reports
    "already applied" on the second run.
-3. **Atomic apply.** Two-phase commit (sibling temp + fsync + rename)
+3. **Syntax-regression guard.** For files with a tree-sitter grammar,
+   refuses a rewrite whose output introduces new parse errors (a greedy
+   regex stranding a brace). Syntactic only; override with
+   `--allow-syntax-errors`.
+4. **Atomic apply.** Two-phase commit (sibling temp + fsync + rename)
    with rollback if any per-file step fails. Crash-recovery sweep
    reconciles leftover `.recast.bak` / `.recast.tmp` siblings.
-4. **Agent-friendly JSON.** `--json` emits a single-line,
+5. **Agent-friendly JSON.** `--json` emits a single-line,
    schema-locked report for plan / apply / check / error.
-5. **Three pattern modes.** Regex (default), Rhai script callback
+6. **Three pattern modes.** Regex (default), Rhai script callback
    (`--script`), or tree-sitter structural (`--lang` + `--query` /
    `--ast`).
 

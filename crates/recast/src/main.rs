@@ -58,6 +58,12 @@ pub(crate) struct GuardOptions {
     #[arg(long, action = ArgAction::SetTrue)]
     allow_non_convergent: bool,
 
+    /// Skip the syntax-regression guard. By default a rewrite whose
+    /// output introduces new tree-sitter parse errors (in a file whose
+    /// extension maps to a compiled grammar) is rejected.
+    #[arg(long, action = ArgAction::SetTrue)]
+    allow_syntax_errors: bool,
+
     /// Refuse files larger than N bytes (default 10485760).
     #[arg(long, value_name = "N", default_value_t = 10 * 1024 * 1024)]
     max_bytes: u64,
@@ -222,6 +228,7 @@ impl Cli {
             at_least: self.min_matches(),
             at_most: self.guard.at_most,
             allow_non_convergent: self.guard.allow_non_convergent,
+            allow_syntax_errors: self.guard.allow_syntax_errors,
             max_bytes: self.guard.max_bytes,
             max_files: self.guard.max_files,
         }

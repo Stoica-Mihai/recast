@@ -36,6 +36,7 @@ fn rewrite_args(pattern: &str, replacement: &str, path: &std::path::Path) -> Rew
         at_least: Some(1),
         at_most: None,
         allow_non_convergent: false,
+        allow_syntax_errors: false,
         max_bytes: DEFAULT_MAX_BYTES,
         max_files: DEFAULT_MAX_FILES,
     }
@@ -57,6 +58,7 @@ fn structural_args(path: &std::path::Path) -> StructuralArgs {
         globs: vec![],
         at_least: Some(1),
         at_most: None,
+        allow_syntax_errors: false,
         max_bytes: DEFAULT_MAX_BYTES,
         max_files: DEFAULT_MAX_FILES,
     }

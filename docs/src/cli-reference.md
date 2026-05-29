@@ -21,6 +21,7 @@ recast [OPTIONS] <PATTERN> <REPLACEMENT> [PATHS]...
 | `--at-least N`      | `1`     | Require at least N matches across all files     |
 | `--at-most N`       | `∞`     | Require at most N matches                       |
 | `--allow-non-convergent` | off | Skip the idempotency check                     |
+| `--allow-syntax-errors` | off | Skip the syntax-regression guard (see [Safety](safety.md)) |
 
 ## Filters
 

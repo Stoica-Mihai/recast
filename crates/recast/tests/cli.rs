@@ -228,6 +228,35 @@ fn structural_mode_stdin_uses_capture_template() {
 }
 
 #[test]
+fn syntax_regression_guard_rejects_and_leaves_file_untouched() {
+    let body = "fn a() {\n    work();\n}\nfn b() {}\n";
+    let dir = fixture(&[("a.rs", body)]);
+    recast()
+        .arg("--apply")
+        .arg(r"fn a\(\) \{\n")
+        .arg("")
+        .arg(dir.path())
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("syntax error"));
+    assert_eq!(fs::read_to_string(dir.path().join("a.rs")).unwrap(), body);
+}
+
+#[test]
+fn allow_syntax_errors_flag_overrides_guard() {
+    let dir = fixture(&[("a.rs", "fn a() {\n    work();\n}\nfn b() {}\n")]);
+    recast()
+        .arg("--apply")
+        .arg("--allow-syntax-errors")
+        .arg(r"fn a\(\) \{\n")
+        .arg("")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.rs")).unwrap(), "    work();\n}\nfn b() {}\n");
+}
+
+#[test]
 fn structural_mode_unknown_language_errors() {
     recast()
         .arg("--lang")

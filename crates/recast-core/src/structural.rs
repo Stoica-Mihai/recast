@@ -75,6 +75,59 @@ impl Language {
         }
     }
 
+    /// Infer the grammar from a file extension. Returns `None` for
+    /// extensions without a compiled grammar — the syntax-regression
+    /// guard is skipped for those files, so a `--no-default-features`
+    /// build that drops every `lang-*` feature keeps working unchecked.
+    pub fn from_path(path: &Path) -> Option<Self> {
+        match path.extension()?.to_str()? {
+            #[cfg(feature = "lang-rust")]
+            "rs" => Some(Language::Rust),
+            #[cfg(feature = "lang-ts")]
+            "ts" => Some(Language::TypeScript),
+            #[cfg(feature = "lang-ts")]
+            "tsx" => Some(Language::Tsx),
+            #[cfg(feature = "lang-js")]
+            "js" | "mjs" | "cjs" | "jsx" => Some(Language::JavaScript),
+            #[cfg(feature = "lang-python")]
+            "py" | "pyi" => Some(Language::Python),
+            #[cfg(feature = "lang-bash")]
+            "sh" | "bash" => Some(Language::Bash),
+            #[cfg(feature = "lang-go")]
+            "go" => Some(Language::Go),
+            #[cfg(feature = "lang-json")]
+            "json" => Some(Language::Json),
+            #[cfg(feature = "lang-md")]
+            "md" | "markdown" => Some(Language::Markdown),
+            _ => None,
+        }
+    }
+
+    /// Stable lowercase name for diagnostics (matches the canonical
+    /// `from_name` alias).
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            #[cfg(feature = "lang-rust")]
+            Language::Rust => "rust",
+            #[cfg(feature = "lang-ts")]
+            Language::TypeScript => "typescript",
+            #[cfg(feature = "lang-ts")]
+            Language::Tsx => "tsx",
+            #[cfg(feature = "lang-js")]
+            Language::JavaScript => "javascript",
+            #[cfg(feature = "lang-python")]
+            Language::Python => "python",
+            #[cfg(feature = "lang-bash")]
+            Language::Bash => "bash",
+            #[cfg(feature = "lang-go")]
+            Language::Go => "go",
+            #[cfg(feature = "lang-json")]
+            Language::Json => "json",
+            #[cfg(feature = "lang-md")]
+            Language::Markdown => "markdown",
+        }
+    }
+
     fn ts_language(self) -> TsLanguage {
         match self {
             #[cfg(feature = "lang-rust")]
@@ -97,6 +150,54 @@ impl Language {
             Language::Markdown => tree_sitter_md::LANGUAGE.into(),
         }
     }
+}
+
+/// Parse `src` with `lang`'s grammar and count `ERROR` + `MISSING`
+/// nodes. A parse that yields no tree (grammar load failure) counts
+/// as zero — the guard compares pre/post deltas, so an unparsable
+/// language degrades to "no regression detected" rather than a false
+/// positive.
+pub(crate) fn count_error_nodes(lang: Language, src: &str) -> usize {
+    let mut parser = Parser::new();
+    if parser.set_language(&lang.ts_language()).is_err() {
+        return 0;
+    }
+    let Some(tree) = parser.parse(src, None) else {
+        return 0;
+    };
+    let mut count = 0usize;
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if node.is_error() || node.is_missing() {
+            count += 1;
+        }
+        let mut c = node.walk();
+        for child in node.children(&mut c) {
+            stack.push(child);
+        }
+    }
+    count
+}
+
+/// Reject a rewrite whose post-image introduces *new* syntax errors.
+/// Files whose extension maps to no compiled grammar pass through
+/// unchecked. The comparison is a count delta — a file that was
+/// already unparsable stays acceptable as long as the rewrite doesn't
+/// make it worse. Shared by the regex/script planner ([`crate::plan`])
+/// and the structural planner.
+pub(crate) fn guard_syntax(path: &Path, before: &str, after: &str) -> Result<()> {
+    let Some(lang) = Language::from_path(path) else {
+        return Ok(());
+    };
+    let new_errors = count_error_nodes(lang, after).saturating_sub(count_error_nodes(lang, before));
+    if new_errors > 0 {
+        return Err(Error::SyntaxRegression {
+            path: path.to_path_buf(),
+            lang: lang.name(),
+            new_errors,
+        });
+    }
+    Ok(())
 }
 
 /// Result of [`structural_rewrite`]: the new source text plus the
@@ -398,6 +499,9 @@ fn plan_one(
     let outcome = compiled.apply(parser, cursor, &before)?;
     if outcome.text == before {
         return Ok(None);
+    }
+    if !opts.allow_syntax_errors {
+        guard_syntax(path, &before, &outcome.text)?;
     }
     let label = label_for_path(path);
     let diff = unified_diff(&label, &before, &outcome.text);

@@ -85,6 +85,14 @@ proptest! {
     }
 
     #[test]
+    fn guard_syntax_never_panics_on_arbitrary_text(
+        before in ".{0,128}",
+        after in ".{0,128}",
+    ) {
+        let _ = crate::structural::guard_syntax(Path::new("a.rs"), &before, &after);
+    }
+
+    #[test]
     fn structural_rewrite_with_garbage_query_returns_err(
         source in ".{0,128}",
         query in proptest::string::string_regex("[^()@a-z ]{0,32}").unwrap(),

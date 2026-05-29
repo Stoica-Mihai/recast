@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
+use std::path::Path;
+
 use super::*;
 use crate::error::Error;
 
@@ -103,6 +105,96 @@ fn language_from_name_parses_rust() {
     assert!(matches!(Language::from_name("rust"), Ok(Language::Rust)));
     assert!(matches!(Language::from_name("Rust"), Ok(Language::Rust)));
     assert!(matches!(Language::from_name("zzz"), Err(Error::UnknownLanguage(_))));
+}
+
+#[test]
+fn language_from_path_maps_rust_extension() {
+    assert!(matches!(Language::from_path(Path::new("foo.rs")), Some(Language::Rust)));
+    assert!(matches!(Language::from_path(Path::new("a/b/c.rs")), Some(Language::Rust)));
+}
+
+#[test]
+fn language_from_path_returns_none_for_unknown_extension() {
+    assert!(Language::from_path(Path::new("foo.txt")).is_none());
+    assert!(Language::from_path(Path::new("foo.toml")).is_none());
+}
+
+#[test]
+fn language_from_path_returns_none_without_extension() {
+    assert!(Language::from_path(Path::new("Makefile")).is_none());
+    assert!(Language::from_path(Path::new("noext")).is_none());
+}
+
+#[cfg(feature = "lang-ts")]
+#[test]
+fn language_from_path_disambiguates_tsx() {
+    assert!(matches!(Language::from_path(Path::new("a.tsx")), Some(Language::Tsx)));
+    assert!(matches!(Language::from_path(Path::new("a.ts")), Some(Language::TypeScript)));
+}
+
+#[test]
+fn count_error_nodes_clean_source_is_zero() {
+    assert_eq!(count_error_nodes(Language::Rust, "fn f() {}"), 0);
+    assert_eq!(count_error_nodes(Language::Rust, "fn f() { let x = 1; }"), 0);
+}
+
+#[test]
+fn count_error_nodes_flags_unbalanced_source() {
+    assert!(count_error_nodes(Language::Rust, "fn f() {") > 0);
+    assert!(count_error_nodes(Language::Rust, "fn f() { let x = ") > 0);
+}
+
+#[test]
+fn guard_syntax_passes_clean_rewrite() {
+    let before = "fn a() {}\nfn b() {}\n";
+    let after = "fn a() {}\n";
+    assert!(guard_syntax(Path::new("x.rs"), before, after).is_ok());
+}
+
+#[test]
+fn guard_syntax_rejects_stranded_brace() {
+    let before = "fn a() {\n    body();\n}\n";
+    let after = "    body();\n}\n";
+    let err = guard_syntax(Path::new("x.rs"), before, after).unwrap_err();
+    let Error::SyntaxRegression { lang, new_errors, .. } = err else {
+        panic!("wrong variant: {err:?}");
+    };
+    assert_eq!(lang, "rust");
+    assert!(new_errors >= 1);
+}
+
+#[test]
+fn plan_structural_rejects_template_breakage() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.rs"), "fn a() {}\n").unwrap();
+    let err = plan_structural_rewrite(
+        Language::Rust,
+        "(function_item) @root",
+        "fn x( {",
+        &[dir.path()],
+        &PlanOptions::default(),
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::SyntaxRegression { .. }), "{err:?}");
+}
+
+#[test]
+fn guard_syntax_skips_unknown_extension() {
+    assert!(guard_syntax(Path::new("notes.txt"), "fn a() {", "fn a() {{").is_ok());
+}
+
+#[test]
+fn guard_syntax_ignores_preexisting_errors() {
+    let before = "fn a( {\n";
+    let after = "fn b( {\n";
+    assert!(guard_syntax(Path::new("x.rs"), before, after).is_ok());
+}
+
+#[cfg(feature = "lang-js")]
+#[test]
+fn language_from_path_jsx_is_javascript() {
+    assert!(matches!(Language::from_path(Path::new("a.jsx")), Some(Language::JavaScript)));
+    assert!(matches!(Language::from_path(Path::new("a.mjs")), Some(Language::JavaScript)));
 }
 
 #[cfg(feature = "lang-ts")]

@@ -58,6 +58,11 @@ pub enum Error {
     StructuralParse,
 
     #[error(
+        "rewrite introduced {new_errors} new syntax error(s) in {path} ({lang}); pass allow_syntax_errors to override"
+    )]
+    SyntaxRegression { path: PathBuf, lang: &'static str, new_errors: usize },
+
+    #[error(
         "another recast is already applying to this tree (lockfile {path} held); use --force to override"
     )]
     Locked { path: PathBuf },
@@ -90,6 +95,7 @@ pub enum ErrorKind {
     StructuralQuery,
     StructuralTemplate,
     StructuralParse,
+    SyntaxRegression,
     Locked,
     InvalidThreads,
     ThreadPool,
@@ -115,6 +121,7 @@ impl Error {
             Error::StructuralQuery(_) => ErrorKind::StructuralQuery,
             Error::StructuralTemplate(_) => ErrorKind::StructuralTemplate,
             Error::StructuralParse => ErrorKind::StructuralParse,
+            Error::SyntaxRegression { .. } => ErrorKind::SyntaxRegression,
             Error::Locked { .. } => ErrorKind::Locked,
             Error::InvalidThreads => ErrorKind::InvalidThreads,
             Error::ThreadPool(_) => ErrorKind::ThreadPool,

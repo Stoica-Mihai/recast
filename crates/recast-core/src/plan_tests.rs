@@ -92,6 +92,53 @@ fn plan_rejects_files_over_max_bytes() {
     assert!(matches!(err, Error::FileTooLarge { size: 6000, limit: 64, .. }));
 }
 
+#[cfg(feature = "lang-rust")]
+#[test]
+fn plan_rejects_syntax_regression() {
+    let dir = fixture(&[("a.rs", "fn a() {\n    work();\n}\nfn b() {}\n")]);
+    let err =
+        plan_rewrite(r"fn a\(\) \{\n", "", &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(
+        matches!(err, Error::SyntaxRegression { new_errors, .. } if new_errors >= 1),
+        "{err:?}"
+    );
+}
+
+#[cfg(feature = "lang-rust")]
+#[test]
+fn plan_allows_syntax_regression_with_override() {
+    let dir = fixture(&[("a.rs", "fn a() {\n    work();\n}\nfn b() {}\n")]);
+    let mut opts = PlanOptions::default();
+    opts.allow_syntax_errors = true;
+    let plan = plan_rewrite(r"fn a\(\) \{\n", "", &[dir.path()], &opts).unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::Changes);
+}
+
+#[cfg(feature = "lang-rust")]
+#[test]
+fn plan_clean_delete_passes_guard() {
+    let dir = fixture(&[("a.rs", "fn a() {}\nfn b() {}\n")]);
+    let plan =
+        plan_rewrite("fn a\\(\\) \\{\\}\n", "", &[dir.path()], &PlanOptions::default()).unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::Changes);
+}
+
+#[cfg(feature = "lang-rust")]
+#[test]
+fn plan_orphan_attr_passes_guard_known_limitation() {
+    let dir = fixture(&[("a.rs", "#[test]\nfn a() {}\nfn b() {}\n")]);
+    let plan =
+        plan_rewrite("fn a\\(\\) \\{\\}\n", "", &[dir.path()], &PlanOptions::default()).unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::Changes);
+}
+
+#[test]
+fn plan_syntax_guard_skips_non_grammar_extension() {
+    let dir = fixture(&[("a.txt", "fn a() {\n    work();\n}\n")]);
+    let plan = plan_rewrite(r"fn a\(\) \{\n", "", &[dir.path()], &PlanOptions::default()).unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::Changes);
+}
+
 #[test]
 fn plan_too_many_files() {
     let dir = fixture(&[("a.txt", "x"), ("b.txt", "x"), ("c.txt", "x")]);

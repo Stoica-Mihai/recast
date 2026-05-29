@@ -112,6 +112,13 @@ fn error_json_file_too_large() {
 }
 
 #[test]
+fn error_json_syntax_regression() {
+    let err =
+        Error::SyntaxRegression { path: PathBuf::from("src/a.rs"), lang: "rust", new_errors: 2 };
+    assert_snapshot!(from_error(&err, 3).to_line().unwrap());
+}
+
+#[test]
 fn error_kind_covers_every_error_variant() {
     let cases = [
         (Error::TooFewMatches { found: 0, required: 1 }, ErrorKind::TooFewMatches),
@@ -121,6 +128,10 @@ fn error_kind_covers_every_error_variant() {
         (
             Error::FileTooLarge { path: PathBuf::from("x"), size: 2, limit: 1 },
             ErrorKind::FileTooLarge,
+        ),
+        (
+            Error::SyntaxRegression { path: PathBuf::from("x"), lang: "rust", new_errors: 1 },
+            ErrorKind::SyntaxRegression,
         ),
     ];
     for (err, expected) in cases {

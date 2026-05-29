@@ -39,6 +39,12 @@ pub struct PlanOptions {
     /// pattern like `a` → `aa` is rejected so re-runs cannot accidentally
     /// grow the file.
     pub allow_non_convergent: bool,
+    /// Skip the post-rewrite syntax-regression guard. Off by default —
+    /// a rewrite whose output introduces *new* tree-sitter parse errors
+    /// (relative to the pre-image) is rejected. Only files whose
+    /// extension maps to a compiled grammar are checked; everything
+    /// else passes through unguarded.
+    pub allow_syntax_errors: bool,
     /// Refuse to read any file larger than this many bytes.
     pub max_bytes: u64,
     /// Refuse to plan if the walk turns up more files than this.
@@ -53,6 +59,7 @@ impl Default for PlanOptions {
             at_least: Some(1),
             at_most: None,
             allow_non_convergent: false,
+            allow_syntax_errors: false,
             max_bytes: 10 * 1024 * 1024,
             max_files: 1000,
         }
@@ -272,6 +279,16 @@ where
         if extra > 0 {
             return Err(Error::NonConvergent { path: path.to_path_buf(), extra });
         }
+    }
+
+    #[cfg(any(
+        feature = "lang-rust",
+        feature = "lang-ts",
+        feature = "lang-js",
+        feature = "lang-python",
+    ))]
+    if !opts.allow_syntax_errors {
+        crate::structural::guard_syntax(path, &before, &outcome.after)?;
     }
 
     let label = label_for_path(path);

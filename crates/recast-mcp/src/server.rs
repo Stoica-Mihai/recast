@@ -125,6 +125,13 @@ impl RecastServer {
                        (e.g. `a` → `aa`) so re-runs can't corrupt the tree.\n\
                        - Match-count guard: default `at_least=1` turns silent zero-match runs \
                        into typed errors.\n\
+                       - Syntax-regression guard: for files whose extension maps to a \
+                       tree-sitter grammar (rust, ts, tsx, js, py, sh, go, json, md), a \
+                       rewrite whose output introduces NEW parse errors is rejected. Catches \
+                       greedy regex that strands a brace or truncates an expression. Note: \
+                       it is syntactic only — it will NOT catch an orphaned `#[test]` left on \
+                       the wrong item (that parses clean; use `recast_structural` for \
+                       shape-sensitive deletes). Pass `allow_syntax_errors=true` to override.\n\
                        - Crash recovery: if killed mid-apply, `recast_recover` restores from \
                        backup.\n\
                        \n\
@@ -250,7 +257,9 @@ impl ServerHandler for RecastServer {
                  \n\
                  SAFETY ALREADY ON: atomic two-phase commit with rollback on per-file \
                  failure, convergence check (refuses `a` → `aa`), `at_least=1` guard \
-                 (refuses silent zero-match runs), crash-recovery sweep, workspace lock."
+                 (refuses silent zero-match runs), syntax-regression guard (refuses rewrites \
+                 that introduce new tree-sitter parse errors; `allow_syntax_errors` to \
+                 override), crash-recovery sweep, workspace lock."
                     .to_owned(),
             )
     }
@@ -318,6 +327,11 @@ pub struct RewriteArgs {
     /// Skip the convergence (idempotency) check.
     #[serde(default)]
     pub allow_non_convergent: bool,
+    /// Skip the syntax-regression guard. By default a rewrite whose
+    /// output introduces new tree-sitter parse errors (in a file whose
+    /// extension maps to a compiled grammar) is rejected.
+    #[serde(default)]
+    pub allow_syntax_errors: bool,
     /// Refuse files larger than this many bytes. Defaults to 10 MiB.
     #[serde(default = "default_max_bytes")]
     pub max_bytes: u64,
@@ -366,6 +380,9 @@ pub struct StructuralArgs {
     pub at_least: Option<usize>,
     #[serde(default)]
     pub at_most: Option<usize>,
+    /// Skip the syntax-regression guard (see RewriteArgs).
+    #[serde(default)]
+    pub allow_syntax_errors: bool,
     #[serde(default = "default_max_bytes")]
     pub max_bytes: u64,
     #[serde(default = "default_max_files")]
@@ -440,6 +457,7 @@ impl RewriteArgs {
             at_least: self.at_least,
             at_most: self.at_most,
             allow_non_convergent: self.allow_non_convergent,
+            allow_syntax_errors: self.allow_syntax_errors,
             max_bytes: self.max_bytes,
             max_files: self.max_files,
         })
@@ -465,6 +483,7 @@ impl StructuralArgs {
             at_least: self.at_least,
             at_most: self.at_most,
             allow_non_convergent: true,
+            allow_syntax_errors: self.allow_syntax_errors,
             max_bytes: self.max_bytes,
             max_files: self.max_files,
         })

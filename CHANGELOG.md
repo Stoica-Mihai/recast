@@ -7,6 +7,33 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.13] — 2026-05-29
+
+### Added
+
+- **Syntax-regression guard.** A third planner guard (alongside the
+  match-count and convergence checks): for every changed file whose
+  extension maps to a compiled tree-sitter grammar (rust, ts, tsx, js,
+  py, sh, go, json, md), recast re-parses the post-image and rejects the
+  rewrite if it introduces *new* parse errors relative to the pre-image.
+  Catches greedy regex that strands a brace or truncates an expression
+  before anything is written to disk. The check is a count delta — a
+  file that was already unparsable stays acceptable as long as the
+  rewrite doesn't make it worse. Runs at plan time, so `recast_preview`
+  / `--diff` surface the regression too.
+  - **Limitation (by design):** the guard is *syntactic*, not semantic.
+    An orphaned `#[test]` left on the wrong item parses clean and is NOT
+    caught — that is a rustc-level error one layer above tree-sitter. Use
+    structural mode for shape-sensitive deletes.
+  - Opt out per run with `--allow-syntax-errors` (CLI) /
+    `allow_syntax_errors: true` (MCP `recast_preview` / `recast_apply` /
+    `recast_structural`). On by default.
+  - New `Error::SyntaxRegression` variant + `ErrorKind::syntax_regression`
+    for JSON output.
+  - New `Language::from_path` maps a file extension to its grammar; the
+    guard is skipped (rewrite passes through unchecked) for extensions
+    with no compiled grammar and for `--no-default-features` builds.
+
 ## [0.1.12] — 2026-05-22
 
 Real-session feedback from a Claude Code user surfaced two

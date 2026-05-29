@@ -5,7 +5,7 @@
 | `0`  | Success, or "no changes needed"                                         |
 | `1`  | `--check` set and at least one file would change                        |
 | `2`  | Match-count guard violated (`--at-least` / `--at-most`)                  |
-| `3`  | Internal error (regex / glob parse, I/O, non-convergent pattern, script error, structural query error, workspace lock held, …) |
+| `3`  | Internal error (regex / glob parse, I/O, non-convergent pattern, syntax regression, script error, structural query error, workspace lock held, …) |
 
 Agents can branch on these without parsing stdout. Combined with `--json`,
 exit-code 2 always pairs with `kind: "error"` + `error: "too_few_matches"`
