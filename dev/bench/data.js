@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779573534900,
+  "lastUpdate": 1780079088885,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -623,6 +623,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 6436914,
             "range": "± 135823",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "5245431f3dba3ed184d3113ce4078d10d4a69a2b",
+          "message": "feat(core): post-apply syntax-regression guard\n\nAdds a third planner guard alongside match-count and convergence: for\nevery changed file whose extension maps to a compiled tree-sitter\ngrammar, re-parse the post-image and reject the rewrite if it\nintroduces new parse errors relative to the pre-image. Catches greedy\nregex that strands a brace or truncates an expression, before anything\nis written. Count-delta comparison so pre-existing parse errors don't\ntrip it. Runs at plan time, so --diff / recast_preview surface it too.\n\nSyntactic only by design: an orphaned #[test] on the wrong item parses\nclean and is not caught (rustc-level, out of scope) — structural mode\nis the fix for that class.\n\n- Language::from_path (extension -> grammar) + Language::name\n- count_error_nodes + guard_syntax helpers in structural.rs\n- Error::SyntaxRegression + ErrorKind::syntax_regression (exit 3)\n- PlanOptions::allow_syntax_errors (on-by-default opt-out)\n- CLI --allow-syntax-errors; MCP allow_syntax_errors on rewrite +\n  structural args; tool-description + ServerInfo notes\n- docs: safety.md (now six guards), cli-reference, exit-codes, README",
+          "timestamp": "2026-05-29T21:19:38+03:00",
+          "tree_id": "3322881fa096927638523705b07e78affecf9e68",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/5245431f3dba3ed184d3113ce4078d10d4a69a2b"
+        },
+        "date": 1780079088021,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2328,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 666310,
+            "range": "± 5232",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1821370,
+            "range": "± 113690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2767213,
+            "range": "± 140702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 6705186,
+            "range": "± 179087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 2995078,
+            "range": "± 18036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3535468,
+            "range": "± 135497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4663157,
+            "range": "± 158176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 9866748,
+            "range": "± 180843",
             "unit": "ns/iter"
           }
         ]
