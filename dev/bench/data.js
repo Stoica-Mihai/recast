@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780079088885,
+  "lastUpdate": 1780082999581,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -701,6 +701,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 9866748,
             "range": "± 180843",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "5f648b8be2a4a12acb0837fb0fc6f21e20b94dcb",
+          "message": "feat(structural): attr-aware delete via --include-leading-attrs\n\nDeleting an item in structural mode replaces only its node, leaving\npreceding #[attr] / doc-comment siblings orphaned (they are siblings of\nthe function_item, not children). --include-leading-attrs extends each\nmatch backward over the contiguous run of leading attribute_item /\ndoc-comment siblings so deleting a fn also removes its #[test] / #[cfg]\n/ /// lines.\n\nThis is the real fix for the orphaned-attribute class the syntactic\nsyntax-regression guard (0.1.13) cannot catch — an orphaned #[test]\nparses clean.\n\n- A blank line ends the run (attribute separated by an empty line is\n  treated as detached). Plain // and /* */ comments are never swallowed,\n  only doc comments (///, //!, /**, /*!).\n- Node kinds are tree-sitter-rust's; languages without attribute_item\n  never extend (no-op), so the flag is safe in any language.\n- CompiledStructural carries the flag; structural_rewrite keeps its\n  4-arg public signature and delegates to structural_rewrite_attrs.\n- CLI --include-leading-attrs (structural only); MCP\n  include_leading_attrs on recast_structural + tool-desc note.\n- Tests: stacked attrs+doc removed, multi-adjacent delete (the\n  motivating plural case), blank-line gap stops run, non-doc comment\n  preserved, flag-off leaves orphan; CLI integration both ways.\n- docs: structural-mode, cli-reference, CHANGELOG [0.1.14], plan status.",
+          "timestamp": "2026-05-29T21:34:54+03:00",
+          "tree_id": "fe6fc3cdba398252534b2ada4b01a7c75b059b25",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/5f648b8be2a4a12acb0837fb0fc6f21e20b94dcb"
+        },
+        "date": 1780082999186,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2369,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 666745,
+            "range": "± 4447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1763036,
+            "range": "± 114744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2498803,
+            "range": "± 112165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 6750607,
+            "range": "± 164441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3025907,
+            "range": "± 92051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3453669,
+            "range": "± 163829",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4475337,
+            "range": "± 125265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 9807925,
+            "range": "± 134185",
             "unit": "ns/iter"
           }
         ]
