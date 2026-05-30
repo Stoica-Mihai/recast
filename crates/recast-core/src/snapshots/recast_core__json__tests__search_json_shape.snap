@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 172
+expression: from_search(&sample_search_plan()).to_line().unwrap()
+---
+{"kind":"search","files_scanned":10,"total_matches":2,"files":[{"path":"src/auth.rs","matches":[{"line":84,"column":5,"snippet":"struct TokenExpiry"},{"line":102,"column":9,"snippet":"impl TokenExpiry {","capture":"definition"}]}]}

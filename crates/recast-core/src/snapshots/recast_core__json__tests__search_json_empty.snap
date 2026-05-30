@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 181
+expression: from_search(&plan).to_line().unwrap()
+---
+{"kind":"search","files_scanned":5,"total_matches":0,"files":[]}
