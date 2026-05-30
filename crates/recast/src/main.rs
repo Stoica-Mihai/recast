@@ -105,7 +105,12 @@ pub(crate) struct StructuralCli {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "recast", about = "Safe, atomic, transparent multi-file text rewrites.", version)]
+#[command(
+    name = "recast",
+    about = "Safe, atomic, transparent multi-file text rewrites.",
+    version,
+    override_usage = "recast [OPTIONS] <PATTERN> [REPLACEMENT] [PATHS]..."
+)]
 pub(crate) struct Cli {
     /// Regex pattern. Multi-line by default. Use --literal for plain-string
     /// matching.
