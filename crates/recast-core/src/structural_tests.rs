@@ -509,8 +509,7 @@ mod search_tests {
         fs::write(dir.path().join("a.rs"), "fn foo() {}\nfn bar() {}").unwrap();
         fs::write(dir.path().join("b.rs"), "struct Baz {}").unwrap();
 
-        let mut opts = SearchOptions::default();
-        opts.at_least = Some(0);
+        let opts = SearchOptions { at_least: Some(0), ..Default::default() };
         let plan = plan_structural_search(
             Language::Rust,
             r#"(function_item) @root"#,

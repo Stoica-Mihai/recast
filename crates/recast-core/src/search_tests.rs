@@ -51,8 +51,7 @@ fn plan_search_finds_matches_across_files() {
     fs::write(dir.path().join("a.txt"), "foo bar foo\n").unwrap();
     fs::write(dir.path().join("b.txt"), "baz\n").unwrap();
 
-    let mut opts = SearchOptions::default();
-    opts.at_least = Some(0);
+    let opts = SearchOptions { at_least: Some(0), ..Default::default() };
     let plan = plan_search("foo", &[dir.path()], &opts).unwrap();
 
     assert_eq!(plan.total_matches, 2);
