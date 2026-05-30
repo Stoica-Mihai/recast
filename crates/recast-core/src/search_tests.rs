@@ -32,13 +32,49 @@ fn line_col_first_line() {
 
 #[test]
 fn line_col_second_line() {
-    // "hello\nworld" — 'w' is at byte 6, line 2 col 1
     assert_eq!(line_col("hello\nworld", 6), (2, 1));
-    // 'o' is at byte 8, line 2 col 3
     assert_eq!(line_col("hello\nworld", 8), (2, 3));
 }
 
 #[test]
 fn line_col_third_line() {
     assert_eq!(line_col("a\nb\nc", 4), (3, 1));
+}
+
+#[test]
+fn plan_search_finds_matches_across_files() {
+    use std::fs;
+    use tempfile::TempDir;
+    use crate::search::{SearchOptions, plan_search};
+
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "foo bar foo\n").unwrap();
+    fs::write(dir.path().join("b.txt"), "baz\n").unwrap();
+
+    let mut opts = SearchOptions::default();
+    opts.at_least = Some(0);
+    let plan = plan_search("foo", &[dir.path()], &opts).unwrap();
+
+    assert_eq!(plan.total_matches, 2);
+    assert_eq!(plan.files.len(), 1);
+    assert_eq!(plan.files[0].matches.len(), 2);
+    assert_eq!(plan.files[0].matches[0].line, 1);
+    assert_eq!(plan.files[0].matches[0].column, 1);
+    assert_eq!(plan.files[0].matches[0].snippet, "foo");
+    assert!(plan.files[0].matches[0].capture.is_none());
+    assert_eq!(plan.files_scanned, 2);
+}
+
+#[test]
+fn plan_search_guard_fires_on_no_matches() {
+    use std::fs;
+    use tempfile::TempDir;
+    use crate::search::{SearchOptions, plan_search};
+    use crate::error::Error;
+
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "baz\n").unwrap();
+
+    let plan = plan_search("foo", &[dir.path()], &SearchOptions::default());
+    assert!(matches!(plan.unwrap_err(), Error::TooFewMatches { found: 0, required: 1 }));
 }

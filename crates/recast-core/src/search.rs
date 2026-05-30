@@ -56,9 +56,9 @@ impl Default for SearchOptions {
     }
 }
 
-/// Return (line, column) for a byte offset in `source`, both 1-indexed.
-/// Column is byte-based (consistent with tree-sitter's `start_position`).
+// column is byte-based — consistent with tree-sitter's `start_position`
 pub(crate) fn line_col(source: &str, byte_offset: usize) -> (usize, usize) {
+    debug_assert!(source.is_char_boundary(byte_offset), "byte_offset must be on a char boundary");
     let prefix = &source[..byte_offset];
     let line = prefix.bytes().filter(|&b| b == b'\n').count() + 1;
     let col = match prefix.rfind('\n') {
@@ -68,7 +68,6 @@ pub(crate) fn line_col(source: &str, byte_offset: usize) -> (usize, usize) {
     (line, col)
 }
 
-/// First line of `s`, trimmed, capped at 200 chars.
 pub(crate) fn truncate_snippet(s: &str) -> String {
     let first_line = s.lines().next().unwrap_or("").trim();
     first_line.chars().take(200).collect()
