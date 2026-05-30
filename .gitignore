@@ -3,6 +3,9 @@
 debug
 target
 
+# Git worktrees
+.worktrees/
+
 # Workspace lockfile created by `recast --apply` / `--recover`
 **/.recast.lock
 
