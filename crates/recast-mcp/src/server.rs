@@ -15,9 +15,9 @@
 use std::path::PathBuf;
 
 use recast_core::{
-    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, ScriptRewriter, WalkOptions,
-    apply_changes, compile_friendly_query, json, plan_rewrite, plan_rewrite_scripted,
-    plan_structural_rewrite, recover_sweep,
+    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, ScriptRewriter, SearchOptions,
+    WalkOptions, apply_changes, compile_friendly_query, json, plan_rewrite, plan_rewrite_scripted,
+    plan_search, plan_structural_rewrite, plan_structural_search, recover_sweep,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -234,6 +234,72 @@ impl RecastServer {
         let summary: RecoverySummary = recover_sweep(&paths).map_err(to_mcp_err)?;
         Ok(CallToolResult::success(vec![Content::json(summary)?]))
     }
+
+    #[tool(description = "Search for patterns across files and return structured match locations \
+                       (file, line, column, snippet, capture name). Use for code navigation: \
+                       finding definitions, usages, callsites — not for rewriting.\n\
+                       \n\
+                       Two modes:\n\
+                       - **Regex:** supply `pattern`. All regex features apply (literal, \
+                       ignore_case, single_line, globs, types).\n\
+                       - **Structural:** supply `lang` + `ast_pattern` (or `query`). Capture \
+                       names (e.g. `@root`, `@name`) surface in the `capture` field so callers \
+                       can distinguish definitions from usages.\n\
+                       \n\
+                       WHEN TO USE OVER GREP:\n\
+                       - Structured JSON output needed (file, line, col, snippet).\n\
+                       - AST-aware search (exact `fn foo()` shape, not text substring).\n\
+                       - Match-count guard: zero matches exits with an error (silent misses \
+                       are impossible).\n\
+                       \n\
+                       OUTPUT: `{kind: \"search\", files_scanned, total_matches, files: \
+                       [{path, matches: [{line, column, snippet, capture?}]}]}`\n\
+                       \n\
+                       EXAMPLES:\n\
+                       Find all uses of `TokenExpiry` across src/:\n\
+                       `{\"pattern\": \"TokenExpiry\", \"paths\": [\"src/\"]}`\n\
+                       \n\
+                       Find all Rust function definitions:\n\
+                       `{\"lang\": \"rust\", \"ast_pattern\": \"fn $NAME() {}\", \
+                       \"paths\": [\"src/\"]}`")]
+    async fn recast_search(
+        &self,
+        Parameters(args): Parameters<SearchArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let opts = args.search_options();
+        let paths = args.paths_as_pathbufs();
+
+        let plan = match (&args.lang, &args.query, &args.ast_pattern, &args.pattern) {
+            (Some(lang_name), query, ast_pattern, _) => {
+                let lang = Language::from_name(lang_name).map_err(to_mcp_err)?;
+                let query_str = match (query, ast_pattern) {
+                    (Some(_), Some(_)) => {
+                        return Err(invalid_args(
+                            "supply either `query` or `ast_pattern`, not both",
+                        ))
+                    }
+                    (Some(q), None) => q.clone(),
+                    (None, Some(pat)) => compile_friendly_query(lang, pat).map_err(to_mcp_err)?,
+                    (None, None) => {
+                        return Err(invalid_args(
+                            "one of `query` or `ast_pattern` is required with `lang`",
+                        ))
+                    }
+                };
+                plan_structural_search(lang, &query_str, &paths, &opts).map_err(to_mcp_err)?
+            }
+            (None, _, _, Some(pattern)) => {
+                plan_search(pattern, &paths, &opts).map_err(to_mcp_err)?
+            }
+            (None, _, _, None) => {
+                return Err(invalid_args(
+                    "either `pattern` (regex) or `lang` + `ast_pattern`/`query` (structural) is required",
+                ));
+            }
+        };
+
+        Ok(CallToolResult::success(vec![Content::json(json::from_search(&plan))?]))
+    }
 }
 
 #[tool_handler]
@@ -267,6 +333,9 @@ impl ServerHandler for RecastServer {
                  reshapes). Supported langs: rust, ts, tsx, js, python, bash, go, json, \
                  markdown.\n\
                  - `recast_recover` only after a prior `recast_apply` was killed mid-run.\n\
+                 - `recast_search` for finding definitions/usages/callsites without rewriting. \
+                 Returns structured locations with capture names for structural queries. Prefer \
+                 over grep for structured output and AST-aware queries.\n\
                  \n\
                  SAFETY ALREADY ON: atomic two-phase commit with rollback on per-file \
                  failure, convergence check (refuses `a` → `aa`), `at_least=1` guard \
@@ -414,6 +483,80 @@ pub struct RecoverArgs {
     /// Paths to sweep for leftover `.recast.bak.*` / `.tmp.*` siblings.
     #[serde(default = "default_paths")]
     pub paths: Vec<String>,
+}
+
+/// Arguments for `recast_search`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SearchArgs {
+    /// Regex pattern to match. Required unless `lang` is set (structural search).
+    #[serde(default)]
+    pub pattern: Option<String>,
+    /// Target language for structural search (rust, ts, tsx, js, python, bash, go, json, markdown).
+    #[serde(default)]
+    pub lang: Option<String>,
+    /// Tree-sitter S-expression query (mutually exclusive with `ast_pattern`).
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Friendly structural pattern with `$NAME` placeholders (mutually exclusive with `query`).
+    #[serde(default)]
+    pub ast_pattern: Option<String>,
+    /// Paths or globs to scan. Defaults to `["."]` if omitted.
+    #[serde(default = "default_paths")]
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub literal: bool,
+    #[serde(default)]
+    pub ignore_case: bool,
+    #[serde(default)]
+    pub single_line: bool,
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub no_ignore: bool,
+    #[serde(default)]
+    pub follow_symlinks: bool,
+    #[serde(default)]
+    pub types: Vec<String>,
+    #[serde(default)]
+    pub types_not: Vec<String>,
+    #[serde(default)]
+    pub globs: Vec<String>,
+    #[serde(default = "default_at_least")]
+    pub at_least: Option<usize>,
+    #[serde(default)]
+    pub at_most: Option<usize>,
+    #[serde(default = "default_max_bytes")]
+    pub max_bytes: u64,
+    #[serde(default = "default_max_files")]
+    pub max_files: usize,
+}
+
+impl SearchArgs {
+    fn search_options(&self) -> SearchOptions {
+        SearchOptions {
+            pattern_options: PatternOptions {
+                literal: self.literal,
+                ignore_case: self.ignore_case,
+                single_line: self.single_line,
+            },
+            walk_options: walk_options_from(
+                self.hidden,
+                self.no_ignore,
+                self.follow_symlinks,
+                &self.types,
+                &self.types_not,
+                &self.globs,
+            ),
+            at_least: self.at_least,
+            at_most: self.at_most,
+            max_bytes: self.max_bytes,
+            max_files: self.max_files,
+        }
+    }
+
+    fn paths_as_pathbufs(&self) -> Vec<PathBuf> {
+        self.paths.iter().map(PathBuf::from).collect()
+    }
 }
 
 /// Run the planner for a `RewriteArgs` call, picking the regex or

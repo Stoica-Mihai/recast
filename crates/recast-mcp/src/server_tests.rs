@@ -213,3 +213,81 @@ async fn recover_with_no_leftovers_returns_zero_summary() {
     assert!(body.contains("\"backups_restored\":0"));
     assert!(body.contains("\"temps_removed\":0"));
 }
+
+fn search_args(pattern: &str, path: &std::path::Path) -> SearchArgs {
+    SearchArgs {
+        pattern: Some(pattern.to_owned()),
+        lang: None,
+        query: None,
+        ast_pattern: None,
+        paths: vec![path.to_string_lossy().into_owned()],
+        literal: false,
+        ignore_case: false,
+        single_line: false,
+        hidden: false,
+        no_ignore: false,
+        follow_symlinks: false,
+        types: vec![],
+        types_not: vec![],
+        globs: vec![],
+        at_least: Some(1),
+        at_most: None,
+        max_bytes: DEFAULT_MAX_BYTES,
+        max_files: DEFAULT_MAX_FILES,
+    }
+}
+
+#[tokio::test]
+async fn search_tool_finds_matches() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "foo bar foo\n").unwrap();
+
+    let out = server().recast_search(Parameters(search_args("foo", dir.path()))).await.unwrap();
+    let body = extract_text(out);
+    assert!(body.contains("\"kind\":\"search\""), "missing kind=search: {body}");
+    assert!(body.contains("\"total_matches\":2"), "expected 2 matches: {body}");
+    assert!(body.contains("\"line\":1"), "expected line 1: {body}");
+    assert!(body.contains("\"column\":1"), "expected column 1: {body}");
+}
+
+#[tokio::test]
+async fn search_tool_guard_error_on_no_match() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "bar\n").unwrap();
+
+    let err = server().recast_search(Parameters(search_args("foo", dir.path()))).await.unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+    assert_eq!(data["kind"], "too_few_matches", "wrong kind: {data}");
+}
+
+#[tokio::test]
+async fn search_tool_structural_surfaces_capture_name() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.rs"), "fn foo() {}\n").unwrap();
+
+    let args = SearchArgs {
+        pattern: None,
+        lang: Some("rust".to_owned()),
+        query: None,
+        ast_pattern: Some("fn $NAME() {}".to_owned()),
+        paths: vec![dir.path().to_string_lossy().into_owned()],
+        at_least: Some(1),
+        at_most: None,
+        literal: false,
+        ignore_case: false,
+        single_line: false,
+        hidden: false,
+        no_ignore: false,
+        follow_symlinks: false,
+        types: vec![],
+        types_not: vec![],
+        globs: vec![],
+        max_bytes: DEFAULT_MAX_BYTES,
+        max_files: DEFAULT_MAX_FILES,
+    };
+    let out = server().recast_search(Parameters(args)).await.unwrap();
+    let body = extract_text(out);
+    assert!(body.contains("\"kind\":\"search\""), "missing kind=search: {body}");
+    assert!(body.contains("\"total_matches\":1"), "expected 1 match: {body}");
+    assert!(body.contains("\"capture\":"), "expected capture field: {body}");
+}
