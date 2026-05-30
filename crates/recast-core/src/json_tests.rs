@@ -138,3 +138,67 @@ fn error_kind_covers_every_error_variant() {
         assert_eq!(err.kind(), expected, "wrong ErrorKind for {err:?}");
     }
 }
+
+#[cfg(feature = "serde")]
+mod search_json_tests {
+    use std::path::PathBuf;
+
+    use insta::assert_snapshot;
+
+    use super::*;
+    use crate::search::{SearchFile, SearchMatch, SearchPlan};
+
+    fn sample_search_plan() -> SearchPlan {
+        SearchPlan {
+            files: vec![SearchFile {
+                path: PathBuf::from("src/auth.rs"),
+                matches: vec![
+                    SearchMatch {
+                        line: 84,
+                        column: 5,
+                        snippet: "struct TokenExpiry".to_owned(),
+                        capture: None,
+                    },
+                    SearchMatch {
+                        line: 102,
+                        column: 9,
+                        snippet: "impl TokenExpiry {".to_owned(),
+                        capture: Some("definition".to_owned()),
+                    },
+                ],
+            }],
+            total_matches: 2,
+            files_scanned: 10,
+        }
+    }
+
+    #[test]
+    fn search_json_shape() {
+        assert_snapshot!(from_search(&sample_search_plan()).to_line().unwrap());
+    }
+
+    #[test]
+    fn search_json_empty() {
+        let plan = SearchPlan { files: vec![], total_matches: 0, files_scanned: 5 };
+        assert_snapshot!(from_search(&plan).to_line().unwrap());
+    }
+
+    #[test]
+    fn search_json_no_capture_field_when_none() {
+        let plan = SearchPlan {
+            files: vec![SearchFile {
+                path: PathBuf::from("a.txt"),
+                matches: vec![SearchMatch {
+                    line: 1,
+                    column: 1,
+                    snippet: "foo".to_owned(),
+                    capture: None,
+                }],
+            }],
+            total_matches: 1,
+            files_scanned: 1,
+        };
+        let json = from_search(&plan).to_line().unwrap();
+        assert!(!json.contains("capture"), "capture field should be absent when None: {json}");
+    }
+}

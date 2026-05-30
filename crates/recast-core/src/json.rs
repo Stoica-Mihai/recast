@@ -19,6 +19,7 @@ use crate::commit::ApplyOutcome;
 use crate::error::Error;
 pub use crate::error::ErrorKind;
 use crate::plan::{Plan, PlanOutcome};
+use crate::search::SearchPlan;
 
 /// Fields shared by every non-error report. Flattened into the wire JSON
 /// so consumers see the same flat object they always have.
@@ -48,6 +49,11 @@ pub enum JsonReport<'a> {
         header: JsonHeader,
         files_would_change: usize,
     },
+    Search {
+        files_scanned: usize,
+        total_matches: usize,
+        files: Vec<JsonSearchFile>,
+    },
     Error {
         error: ErrorKind,
         message: String,
@@ -59,6 +65,21 @@ pub enum JsonReport<'a> {
 pub struct JsonFile<'a> {
     pub path: &'a Path,
     pub matches: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JsonSearchMatch {
+    pub line: usize,
+    pub column: usize,
+    pub snippet: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JsonSearchFile {
+    pub path: String,
+    pub matches: Vec<JsonSearchMatch>,
 }
 
 impl JsonReport<'_> {
@@ -100,6 +121,30 @@ pub fn from_check(plan: &Plan) -> JsonReport<'_> {
 
 pub fn from_error(err: &Error, exit_code: u8) -> JsonReport<'static> {
     JsonReport::Error { error: err.kind(), message: err.to_string(), exit_code }
+}
+
+pub fn from_search(plan: &SearchPlan) -> JsonReport<'static> {
+    JsonReport::Search {
+        files_scanned: plan.files_scanned,
+        total_matches: plan.total_matches,
+        files: plan
+            .files
+            .iter()
+            .map(|f| JsonSearchFile {
+                path: f.path.display().to_string(),
+                matches: f
+                    .matches
+                    .iter()
+                    .map(|m| JsonSearchMatch {
+                        line: m.line,
+                        column: m.column,
+                        snippet: m.snippet.clone(),
+                        capture: m.capture.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]
