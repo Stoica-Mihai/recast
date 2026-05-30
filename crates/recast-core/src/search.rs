@@ -32,6 +32,7 @@ pub struct SearchPlan {
     pub files_scanned: usize,
 }
 
+// PatternOptions and WalkOptions are not Serialize; serde omitted for SearchOptions
 #[derive(Debug, Clone)]
 pub struct SearchOptions {
     pub pattern_options: PatternOptions,
