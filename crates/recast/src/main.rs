@@ -228,17 +228,21 @@ impl Cli {
         }
     }
 
+    fn walk_options(&self) -> WalkOptions {
+        WalkOptions {
+            hidden: self.hidden,
+            no_ignore: self.no_ignore,
+            follow_symlinks: false,
+            types: self.type_.clone(),
+            types_not: self.type_not.clone(),
+            globs: self.glob.clone(),
+        }
+    }
+
     fn plan_options(&self) -> PlanOptions {
         PlanOptions {
             pattern_options: self.pattern_options(),
-            walk_options: WalkOptions {
-                hidden: self.hidden,
-                no_ignore: self.no_ignore,
-                follow_symlinks: false,
-                types: self.type_.clone(),
-                types_not: self.type_not.clone(),
-                globs: self.glob.clone(),
-            },
+            walk_options: self.walk_options(),
             at_least: self.min_matches(),
             at_most: self.guard.at_most,
             allow_non_convergent: self.guard.allow_non_convergent,
@@ -257,14 +261,7 @@ impl Cli {
     fn search_options(&self) -> SearchOptions {
         SearchOptions {
             pattern_options: self.pattern_options(),
-            walk_options: WalkOptions {
-                hidden: self.hidden,
-                no_ignore: self.no_ignore,
-                follow_symlinks: false,
-                types: self.type_.clone(),
-                types_not: self.type_not.clone(),
-                globs: self.glob.clone(),
-            },
+            walk_options: self.walk_options(),
             at_least: self.min_matches(),
             at_most: self.guard.at_most,
             max_bytes: self.guard.max_bytes,
@@ -479,37 +476,24 @@ fn emit_search_results(out: &OutputOptions, plan: &SearchPlan) -> Result<()> {
     let mut stdout = io::stdout().lock();
 
     if !out.quiet {
-        if out.verbose {
-            for file in &plan.files {
+        for file in &plan.files {
+            if out.verbose {
                 writeln!(
                     stdout,
                     "--- {} ({} match(es)) ---",
                     file.path.display(),
                     file.matches.len()
                 )?;
-                for m in &file.matches {
-                    writeln!(
-                        stdout,
-                        "{}:{}:{}: {}",
-                        file.path.display(),
-                        m.line,
-                        m.column,
-                        m.snippet
-                    )?;
-                }
             }
-        } else {
-            for file in &plan.files {
-                for m in &file.matches {
-                    writeln!(
-                        stdout,
-                        "{}:{}:{}: {}",
-                        file.path.display(),
-                        m.line,
-                        m.column,
-                        m.snippet
-                    )?;
-                }
+            for m in &file.matches {
+                writeln!(
+                    stdout,
+                    "{}:{}:{}: {}",
+                    file.path.display(),
+                    m.line,
+                    m.column,
+                    m.snippet
+                )?;
             }
         }
         writeln!(stdout)?;
