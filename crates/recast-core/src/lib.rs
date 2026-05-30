@@ -50,7 +50,7 @@ pub use script::ScriptRewriter;
 ))]
 pub use structural::{
     Language, StructuralOutcome, compile_friendly_query, plan_structural_rewrite,
-    structural_rewrite, structural_rewrite_friendly,
+    plan_structural_search, structural_rewrite, structural_rewrite_friendly, structural_search,
 };
 pub use search::{SearchFile, SearchMatch, SearchOptions, SearchPlan, plan_search};
 pub use walker::{WalkOptions, walk_paths};

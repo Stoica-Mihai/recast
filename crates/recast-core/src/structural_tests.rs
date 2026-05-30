@@ -455,3 +455,91 @@ fn friendly_pattern_no_matches_leaves_source_intact() {
     assert_eq!(out.text, source);
     assert_eq!(out.matches, 0);
 }
+
+#[cfg(feature = "lang-rust")]
+mod search_tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::search::SearchOptions;
+    use crate::structural::plan_structural_search;
+
+    #[test]
+    fn structural_search_finds_function_definitions() {
+        let source = "fn foo() {}\nfn bar() {}";
+        let results = structural_search(
+            Language::Rust,
+            source,
+            r#"(function_item name: (identifier) @name) @root"#,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].line, 1);
+        assert_eq!(results[1].line, 2);
+        assert!(results[0].snippet.contains("fn foo"));
+        assert!(results[1].snippet.contains("fn bar"));
+    }
+
+    #[test]
+    fn structural_search_primary_capture_is_root() {
+        let source = "fn foo() {}";
+        let results = structural_search(
+            Language::Rust,
+            source,
+            r#"(function_item name: (identifier) @name) @root"#,
+        )
+        .unwrap();
+        assert_eq!(results[0].capture.as_deref(), Some("root"));
+    }
+
+    #[test]
+    fn structural_search_no_matches_returns_empty() {
+        let source = "struct Foo {}";
+        let results = structural_search(
+            Language::Rust,
+            source,
+            r#"(function_item) @root"#,
+        )
+        .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn plan_structural_search_multi_file() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.rs"), "fn foo() {}\nfn bar() {}").unwrap();
+        fs::write(dir.path().join("b.rs"), "struct Baz {}").unwrap();
+
+        let mut opts = SearchOptions::default();
+        opts.at_least = Some(0);
+        let plan = plan_structural_search(
+            Language::Rust,
+            r#"(function_item) @root"#,
+            &[dir.path()],
+            &opts,
+        )
+        .unwrap();
+
+        assert_eq!(plan.total_matches, 2);
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].matches.len(), 2);
+        assert_eq!(plan.files_scanned, 2);
+    }
+
+    #[test]
+    fn plan_structural_search_guard_fires() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.rs"), "struct Foo {}").unwrap();
+
+        let err = plan_structural_search(
+            Language::Rust,
+            r#"(function_item) @root"#,
+            &[dir.path()],
+            &SearchOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, crate::error::Error::TooFewMatches { .. }));
+    }
+}

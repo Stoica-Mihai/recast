@@ -15,6 +15,7 @@ use crate::plan::{
     FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, read_text_or_skip_binary,
 };
 use crate::rewrite::{label_for_path, unified_diff};
+use crate::search::{SearchFile, SearchMatch, SearchOptions, SearchPlan, collect, scan, truncate_snippet};
 use crate::walker::walk_paths;
 
 const METAVAR_PREFIX: &str = "__RECAST_VAR_";
@@ -325,6 +326,49 @@ impl CompiledStructural {
         Ok(StructuralOutcome { text: out, matches: applied })
     }
 
+    pub(crate) fn search(
+        &self,
+        parser: &mut Parser,
+        cursor: &mut QueryCursor,
+        source: &str,
+    ) -> Result<Vec<SearchMatch>> {
+        let tree = parser.parse(source, None).ok_or(Error::StructuralParse)?;
+        let bytes = source.as_bytes();
+        let capture_names = self.query.capture_names();
+
+        let mut hits: Vec<SearchMatch> = Vec::new();
+        let mut iter = cursor.matches(&self.query, tree.root_node(), bytes);
+        while let Some(m) = iter.next() {
+            let primary = match self.root_capture_idx {
+                Some(idx) => m
+                    .captures
+                    .iter()
+                    .find(|c| c.index as usize == idx)
+                    .ok_or_else(|| {
+                        Error::StructuralQuery(format!(
+                            "match did not bind primary capture index {idx}"
+                        ))
+                    })?,
+                None => outermost_capture(m.captures).ok_or_else(|| {
+                    Error::StructuralQuery("match bound no captures".into())
+                })?,
+            };
+            let pos = primary.node.start_position();
+            let capture_name =
+                capture_names.get(primary.index as usize).copied().map(ToOwned::to_owned);
+            let snippet =
+                truncate_snippet(&source[primary.node.start_byte()..primary.node.end_byte()]);
+            hits.push(SearchMatch {
+                line: pos.row + 1,
+                column: pos.column + 1,
+                snippet,
+                capture: capture_name,
+            });
+        }
+        hits.sort_by_key(|h| (h.line, h.column));
+        Ok(hits)
+    }
+
     fn render(&self, source: &str, captures: &[tree_sitter::QueryCapture<'_>]) -> Result<String> {
         let mut out = String::with_capacity(self.template_size_hint());
         for part in &self.template_parts {
@@ -603,6 +647,53 @@ pub fn structural_rewrite_friendly(
 ) -> Result<StructuralOutcome> {
     let query = compile_friendly_query(lang, pattern_source)?;
     structural_rewrite(lang, source, &query, template)
+}
+
+/// Run a tree-sitter query against `source` and return match locations without rewriting.
+pub fn structural_search(
+    lang: Language,
+    source: &str,
+    query_src: &str,
+) -> Result<Vec<SearchMatch>> {
+    let compiled = CompiledStructural::compile(lang, query_src, "", false)?;
+    let mut parser = compiled.new_parser();
+    let mut cursor = QueryCursor::new();
+    compiled.search(&mut parser, &mut cursor, source)
+}
+
+/// Multi-file structural search. Walk `roots`, run the query per file, fold into `SearchPlan`.
+pub fn plan_structural_search<P: AsRef<std::path::Path>>(
+    lang: Language,
+    query_src: &str,
+    roots: &[P],
+    opts: &SearchOptions,
+) -> Result<SearchPlan> {
+    let files = scan(roots, opts)?;
+    let files_scanned = files.len();
+    let compiled = CompiledStructural::compile(lang, query_src, "", false)?;
+
+    let results: Vec<Result<Option<SearchFile>>> = files
+        .par_iter()
+        .map_init(
+            || (compiled.new_parser(), QueryCursor::new()),
+            |(parser, cursor), path| {
+                let (source, _) = match read_text_or_skip_binary(path, opts.max_bytes)? {
+                    Some(pair) => pair,
+                    None => return Ok(None),
+                };
+                let matches = compiled.search(parser, cursor, &source)?;
+                if matches.is_empty() {
+                    return Ok(None);
+                }
+                Ok(Some(SearchFile { path: path.to_path_buf(), matches }))
+            },
+        )
+        .collect();
+
+    let found = collect(results)?;
+    let total_matches: usize = found.iter().map(|f| f.matches.len()).sum();
+    check_match_counts(total_matches, opts.at_least, opts.at_most)?;
+    Ok(SearchPlan { files: found, total_matches, files_scanned })
 }
 
 /// Compile a friendly pattern (target-language source with `$NAME`
