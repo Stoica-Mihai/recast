@@ -7,6 +7,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+
+- `--search` flag: find match locations (file:line:col:snippet) without rewriting. Outputs grep-like human text or structured JSON (`kind: "search"`). Supports all filter flags, `--at-least`/`--at-most` guard, `--json`, `--quiet`, `--verbose`, and structural mode (`--lang` + `--ast`/`--query`).
+- `recast_search` MCP tool: structured code navigation returning per-match line/column/snippet/capture. Supports regex and tree-sitter AST-aware queries; capture names distinguish definition from usage captures.
+
 ## [0.1.14] — 2026-05-29
 
 ### Added

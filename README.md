@@ -202,6 +202,23 @@ match) defines the byte range to replace. The template uses
 | JSON        | `json`                         | `lang-json`   |
 | Markdown    | `markdown`, `md`               | `lang-md`     |
 
+### Search mode
+
+Find match locations without rewriting. Outputs `file:line:col: snippet` per match.
+
+```bash
+# Regex search
+recast TokenExpiry --search src/
+
+# Structural: find all Rust function definitions
+recast --lang rust --ast 'fn $NAME() {}' --search src/
+
+# Machine-readable output
+recast TokenExpiry --search --json src/
+```
+
+Guard, filter, and type flags all apply to `--search`. `--json` emits `kind: "search"` with per-match `file`, `line`, `col`, `snippet`, and (in structural mode) `capture` name.
+
 ### Crash recovery
 
 If a `--apply` crashes mid-commit (panic, signal, power loss), the tree
@@ -310,6 +327,7 @@ Restart the client. Four tools become available:
 | `recast_preview` | Dry-run a regex rewrite, return plan + diffs. |
 | `recast_apply`   | Atomically apply a regex rewrite to disk. |
 | `recast_structural` | Tree-sitter `--ast` rewrite (dry-run or apply). |
+| `recast_search`  | Find match locations (file/line/col/snippet/capture) without rewriting. |
 | `recast_recover` | Reconcile leftover `.recast.bak.*` / `.tmp.*` siblings. |
 
 Why agents reach for it instead of `write_file` loops or `sed`:
