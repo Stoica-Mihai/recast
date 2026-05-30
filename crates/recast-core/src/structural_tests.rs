@@ -498,12 +498,8 @@ mod search_tests {
     #[test]
     fn structural_search_no_matches_returns_empty() {
         let source = "struct Foo {}";
-        let results = structural_search(
-            Language::Rust,
-            source,
-            r#"(function_item) @root"#,
-        )
-        .unwrap();
+        let results =
+            structural_search(Language::Rust, source, r#"(function_item) @root"#).unwrap();
         assert!(results.is_empty());
     }
 

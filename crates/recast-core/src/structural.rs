@@ -15,7 +15,9 @@ use crate::plan::{
     FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, read_text_or_skip_binary,
 };
 use crate::rewrite::{label_for_path, unified_diff};
-use crate::search::{SearchFile, SearchMatch, SearchOptions, SearchPlan, collect, scan, truncate_snippet};
+use crate::search::{
+    SearchFile, SearchMatch, SearchOptions, SearchPlan, collect, scan, truncate_snippet,
+};
 use crate::walker::walk_paths;
 
 const METAVAR_PREFIX: &str = "__RECAST_VAR_";
@@ -340,18 +342,15 @@ impl CompiledStructural {
         let mut iter = cursor.matches(&self.query, tree.root_node(), bytes);
         while let Some(m) = iter.next() {
             let primary = match self.root_capture_idx {
-                Some(idx) => m
-                    .captures
-                    .iter()
-                    .find(|c| c.index as usize == idx)
-                    .ok_or_else(|| {
+                Some(idx) => {
+                    m.captures.iter().find(|c| c.index as usize == idx).ok_or_else(|| {
                         Error::StructuralQuery(format!(
                             "match did not bind primary capture index {idx}"
                         ))
-                    })?,
-                None => outermost_capture(m.captures).ok_or_else(|| {
-                    Error::StructuralQuery("match bound no captures".into())
-                })?,
+                    })?
+                }
+                None => outermost_capture(m.captures)
+                    .ok_or_else(|| Error::StructuralQuery("match bound no captures".into()))?,
             };
             let pos = primary.node.start_position();
             let capture_name =

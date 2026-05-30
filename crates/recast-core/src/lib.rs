@@ -13,12 +13,12 @@ mod lockfile;
 mod parallel;
 mod pattern;
 mod plan;
-mod search;
 #[cfg(test)]
 mod proptests;
 mod rewrite;
 #[cfg(feature = "script")]
 mod script;
+mod search;
 #[cfg(any(
     feature = "lang-rust",
     feature = "lang-ts",
@@ -42,6 +42,7 @@ pub use rewrite::rewrite_text_scripted;
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
 #[cfg(feature = "script")]
 pub use script::ScriptRewriter;
+pub use search::{SearchFile, SearchMatch, SearchOptions, SearchPlan, plan_search};
 #[cfg(any(
     feature = "lang-rust",
     feature = "lang-ts",
@@ -52,5 +53,4 @@ pub use structural::{
     Language, StructuralOutcome, compile_friendly_query, plan_structural_rewrite,
     plan_structural_search, structural_rewrite, structural_rewrite_friendly, structural_search,
 };
-pub use search::{SearchFile, SearchMatch, SearchOptions, SearchPlan, plan_search};
 pub use walker::{WalkOptions, walk_paths};

@@ -486,14 +486,7 @@ fn emit_search_results(out: &OutputOptions, plan: &SearchPlan) -> Result<()> {
                 )?;
             }
             for m in &file.matches {
-                writeln!(
-                    stdout,
-                    "{}:{}:{}: {}",
-                    file.path.display(),
-                    m.line,
-                    m.column,
-                    m.snippet
-                )?;
+                writeln!(stdout, "{}:{}:{}: {}", file.path.display(), m.line, m.column, m.snippet)?;
             }
         }
         writeln!(stdout)?;

@@ -43,9 +43,9 @@ fn line_col_third_line() {
 
 #[test]
 fn plan_search_finds_matches_across_files() {
+    use crate::search::{SearchOptions, plan_search};
     use std::fs;
     use tempfile::TempDir;
-    use crate::search::{SearchOptions, plan_search};
 
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("a.txt"), "foo bar foo\n").unwrap();
@@ -67,10 +67,10 @@ fn plan_search_finds_matches_across_files() {
 
 #[test]
 fn plan_search_guard_fires_on_no_matches() {
+    use crate::error::Error;
+    use crate::search::{SearchOptions, plan_search};
     use std::fs;
     use tempfile::TempDir;
-    use crate::search::{SearchOptions, plan_search};
-    use crate::error::Error;
 
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("a.txt"), "baz\n").unwrap();

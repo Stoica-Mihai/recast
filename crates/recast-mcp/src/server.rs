@@ -276,14 +276,14 @@ impl RecastServer {
                     (Some(_), Some(_)) => {
                         return Err(invalid_args(
                             "supply either `query` or `ast_pattern`, not both",
-                        ))
+                        ));
                     }
                     (Some(q), None) => q.clone(),
                     (None, Some(pat)) => compile_friendly_query(lang, pat).map_err(to_mcp_err)?,
                     (None, None) => {
                         return Err(invalid_args(
                             "one of `query` or `ast_pattern` is required with `lang`",
-                        ))
+                        ));
                     }
                 };
                 plan_structural_search(lang, &query_str, &paths, &opts).map_err(to_mcp_err)?

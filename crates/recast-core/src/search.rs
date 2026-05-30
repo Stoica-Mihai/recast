@@ -82,10 +82,8 @@ pub fn plan_search<P: AsRef<std::path::Path>>(
     let files = scan(roots, opts)?;
     let files_scanned = files.len();
 
-    let results: Vec<Result<Option<SearchFile>>> = files
-        .par_iter()
-        .map(|path| search_one(&compiled, path, opts))
-        .collect();
+    let results: Vec<Result<Option<SearchFile>>> =
+        files.par_iter().map(|path| search_one(&compiled, path, opts)).collect();
 
     let found = collect(results)?;
     let total_matches: usize = found.iter().map(|f| f.matches.len()).sum();
