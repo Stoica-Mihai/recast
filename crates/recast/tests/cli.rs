@@ -374,3 +374,107 @@ fn completions_flag_outputs_shell_script() {
         .success()
         .stdout(predicate::str::contains("_recast()"));
 }
+
+mod search_tests {
+    use std::fs;
+
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+    use tempfile::TempDir;
+
+    fn recast() -> Command {
+        Command::cargo_bin("recast").unwrap()
+    }
+
+    fn fixture(files: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (name, body) in files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&path, body).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn search_exits_zero_and_shows_matches() {
+        let dir = fixture(&[("a.txt", "foo bar foo\n")]);
+        recast()
+            .arg("foo")
+            .arg("--search")
+            .arg(dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("a.txt:1:1: foo"))
+            .stdout(predicate::str::contains("2 matches in 1 file"));
+    }
+
+    #[test]
+    fn search_quiet_shows_only_summary() {
+        let dir = fixture(&[("a.txt", "foo\n")]);
+        recast()
+            .arg("foo")
+            .arg("--search")
+            .arg("--quiet")
+            .arg(dir.path())
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("1 match in 1 file"));
+    }
+
+    #[test]
+    fn search_json_emits_kind_search() {
+        let dir = fixture(&[("a.txt", "foo\n")]);
+        let out = recast()
+            .arg("foo")
+            .arg("--search")
+            .arg("--json")
+            .arg(dir.path())
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let s = String::from_utf8(out).unwrap();
+        let v: serde_json::Value = serde_json::from_str(s.trim()).unwrap();
+        assert_eq!(v["kind"], "search");
+        assert_eq!(v["total_matches"], 1);
+        assert_eq!(v["files"][0]["matches"][0]["line"], 1);
+        assert_eq!(v["files"][0]["matches"][0]["column"], 1);
+        assert_eq!(v["files"][0]["matches"][0]["snippet"], "foo");
+    }
+
+    #[test]
+    fn search_no_match_guard_violation_exits_two() {
+        let dir = fixture(&[("a.txt", "bar\n")]);
+        recast().arg("foo").arg("--search").arg(dir.path()).assert().code(2);
+    }
+
+    #[test]
+    fn search_at_least_zero_allows_no_matches() {
+        let dir = fixture(&[("a.txt", "bar\n")]);
+        recast()
+            .arg("foo")
+            .arg("--search")
+            .arg("--at-least")
+            .arg("0")
+            .arg(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn search_does_not_modify_files() {
+        let dir = fixture(&[("a.txt", "foo\n")]);
+        recast().arg("foo").arg("--search").arg(dir.path()).assert().success();
+        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "foo\n");
+    }
+
+    #[test]
+    fn search_conflicts_with_apply() {
+        let dir = fixture(&[("a.txt", "foo\n")]);
+        recast().arg("foo").arg("--search").arg("--apply").arg(dir.path()).assert().failure();
+    }
+}

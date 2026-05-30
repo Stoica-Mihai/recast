@@ -9,9 +9,10 @@ use clap::{ArgAction, Args, Parser};
 use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
-    ScriptRewriter, WalkOptions, WorkspaceLock, acquire_workspace_lock, apply_changes, build_pool,
-    check_match_counts, json, plan_rewrite, plan_rewrite_scripted, plan_structural_rewrite,
-    recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
+    ScriptRewriter, SearchOptions, SearchPlan, WalkOptions, WorkspaceLock, acquire_workspace_lock,
+    apply_changes, build_pool, check_match_counts, json, plan_rewrite, plan_rewrite_scripted,
+    plan_search, plan_structural_rewrite, plan_structural_search, recover_sweep, rewrite_text,
+    rewrite_text_scripted, structural_rewrite,
 };
 
 const EXIT_OK: u8 = 0;
@@ -108,12 +109,12 @@ pub(crate) struct StructuralCli {
 pub(crate) struct Cli {
     /// Regex pattern. Multi-line by default. Use --literal for plain-string
     /// matching.
-    #[arg(required_unless_present_any = ["completions", "recover"])]
+    #[arg(required_unless_present_any = ["completions", "recover", "search"])]
     pattern: Option<String>,
 
     /// Replacement template. $1, $2, ${name} interpolated unless --literal
     /// is set.
-    #[arg(required_unless_present_any = ["completions", "recover"])]
+    #[arg(required_unless_present_any = ["completions", "recover", "search"])]
     replacement: Option<String>,
 
     /// Paths or globs to scan. Defaults to the current directory if omitted.
@@ -131,6 +132,12 @@ pub(crate) struct Cli {
     /// Exit non-zero if any file would change. No output, no writes.
     #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["apply"])]
     check: bool,
+
+    /// Find matches and report locations (file:line:col:snippet) without rewriting.
+    /// Compatible with --json, --quiet, --verbose, --type, all filter flags, and
+    /// structural --lang/--query/--ast.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with_all = ["apply", "check", "script", "stdin", "recover"])]
+    search: bool,
 
     #[command(flatten)]
     guard: GuardOptions,
@@ -247,8 +254,45 @@ impl Cli {
         Some(self.guard.at_least.unwrap_or(1))
     }
 
+    fn search_options(&self) -> SearchOptions {
+        SearchOptions {
+            pattern_options: self.pattern_options(),
+            walk_options: WalkOptions {
+                hidden: self.hidden,
+                no_ignore: self.no_ignore,
+                follow_symlinks: false,
+                types: self.type_.clone(),
+                types_not: self.type_not.clone(),
+                globs: self.glob.clone(),
+            },
+            at_least: self.min_matches(),
+            at_most: self.guard.at_most,
+            max_bytes: self.guard.max_bytes,
+            max_files: self.guard.max_files,
+        }
+    }
+
     fn paths_as_pathbufs(&self) -> Vec<PathBuf> {
         self.paths.iter().map(PathBuf::from).collect()
+    }
+
+    /// `--search` with no replacement: clap binds positionals left-to-right
+    /// so `pattern` gets the regex and `replacement` gets the first path.
+    /// Fold `replacement` (and any further `paths`) back into a path list.
+    fn search_paths(&self) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        if let Some(p) = self.replacement.as_deref() {
+            paths.push(PathBuf::from(p));
+        }
+        for p in &self.paths {
+            if p != "." || paths.is_empty() {
+                paths.push(PathBuf::from(p));
+            }
+        }
+        if paths.is_empty() {
+            paths.push(PathBuf::from("."));
+        }
+        paths
     }
 
     /// `--recover` accepts any number of paths as positionals. Clap binds
@@ -320,6 +364,10 @@ fn run(cli: Cli) -> Result<u8> {
         return Ok(EXIT_OK);
     }
 
+    if cli.search {
+        return run_search_mode(cli);
+    }
+
     // Resolve structural --query / --ast before constructing the worker
     // pool: a malformed structural CLI should fail without spawning N
     // rayon threads first.
@@ -343,7 +391,7 @@ fn run(cli: Cli) -> Result<u8> {
     let pool = build_pool(cli.threads).context("configure worker thread pool")?;
     pool.install(|| {
         if let Some((lang, query, template)) = structural.as_ref() {
-            return run_structural(&cli, *lang, query, template);
+            return run_structural(&cli, *lang, query, template.as_str());
         }
         let pattern = pattern.ok_or_else(|| anyhow!("pattern required"))?;
         let replacement = replacement.ok_or_else(|| anyhow!("replacement required"))?;
@@ -361,31 +409,123 @@ fn run(cli: Cli) -> Result<u8> {
     })
 }
 
-/// Resolve the structural-mode triple (language, query string, template)
-/// from the CLI. Returns `Ok(None)` for non-structural invocations;
-/// returns `Err` if `--lang` is set but the user didn't supply
-/// `--query`/`--ast` or the lang/pattern doesn't compile.
-fn resolve_structural(cli: &Cli) -> Result<Option<(Language, String, &str)>> {
+fn compile_structural_query(cli: &Cli, lang: Language) -> Result<String> {
+    if let Some(q) = cli.structural.query.as_deref() {
+        Ok(q.to_owned())
+    } else if let Some(pat) = cli.structural.ast_pattern.as_deref() {
+        recast_core::compile_friendly_query(lang, pat).map_err(anyhow::Error::from)
+    } else {
+        Err(anyhow!("--query or --ast required with --lang"))
+    }
+}
+
+fn resolve_structural_for_search(cli: &Cli) -> Result<Option<(Language, String)>> {
     let Some(lang_name) = cli.structural.lang.as_deref() else {
+        return Ok(None);
+    };
+    let lang = resolve_lang(lang_name)?;
+    let query = compile_structural_query(cli, lang)?;
+    Ok(Some((lang, query)))
+}
+
+fn resolve_structural(cli: &Cli) -> Result<Option<(Language, String, String)>> {
+    let Some((lang, query)) = resolve_structural_for_search(cli)? else {
         return Ok(None);
     };
     let template = cli
         .replacement
-        .as_deref()
+        .clone()
         .ok_or_else(|| anyhow!("REPLACEMENT positional is the template in structural mode"))?;
-    let lang = resolve_lang(lang_name)?;
-    let query = if let Some(q) = cli.structural.query.as_deref() {
-        q.to_owned()
-    } else if let Some(pat) = cli.structural.ast_pattern.as_deref() {
-        recast_core::compile_friendly_query(lang, pat).map_err(anyhow::Error::from)?
-    } else {
-        return Err(anyhow!("--query or --ast required with --lang"));
-    };
     Ok(Some((lang, query, template)))
 }
 
 fn resolve_lang(name: &str) -> Result<Language> {
     Language::from_name(name).map_err(anyhow::Error::from)
+}
+
+fn run_search_mode(cli: Cli) -> Result<u8> {
+    let structural = resolve_structural_for_search(&cli)?;
+    let paths = cli.search_paths();
+    let opts = cli.search_options();
+    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
+    pool.install(|| {
+        if let Some((lang, query)) = structural {
+            let plan = match plan_structural_search(lang, &query, &paths, &opts) {
+                Ok(p) => p,
+                Err(e) => return handle_plan_error(e, cli.output.json),
+            };
+            emit_search_results(&cli.output, &plan)?;
+            return Ok(EXIT_OK);
+        }
+        let pattern = cli
+            .pattern
+            .as_deref()
+            .ok_or_else(|| anyhow!("PATTERN is required for regex search mode"))?;
+        let plan = match plan_search(pattern, &paths, &opts) {
+            Ok(p) => p,
+            Err(e) => return handle_plan_error(e, cli.output.json),
+        };
+        emit_search_results(&cli.output, &plan)?;
+        Ok(EXIT_OK)
+    })
+}
+
+fn emit_search_results(out: &OutputOptions, plan: &SearchPlan) -> Result<()> {
+    if out.json {
+        println!("{}", json::from_search(plan).to_line()?);
+        return Ok(());
+    }
+
+    let mut stdout = io::stdout().lock();
+
+    if !out.quiet {
+        if out.verbose {
+            for file in &plan.files {
+                writeln!(
+                    stdout,
+                    "--- {} ({} match(es)) ---",
+                    file.path.display(),
+                    file.matches.len()
+                )?;
+                for m in &file.matches {
+                    writeln!(
+                        stdout,
+                        "{}:{}:{}: {}",
+                        file.path.display(),
+                        m.line,
+                        m.column,
+                        m.snippet
+                    )?;
+                }
+            }
+        } else {
+            for file in &plan.files {
+                for m in &file.matches {
+                    writeln!(
+                        stdout,
+                        "{}:{}:{}: {}",
+                        file.path.display(),
+                        m.line,
+                        m.column,
+                        m.snippet
+                    )?;
+                }
+            }
+        }
+        writeln!(stdout)?;
+    }
+
+    let nfiles = plan.files.len();
+    writeln!(
+        stdout,
+        "{} {} in {} {}, {} files scanned",
+        plan.total_matches,
+        if plan.total_matches == 1 { "match" } else { "matches" },
+        nfiles,
+        if nfiles == 1 { "file" } else { "files" },
+        plan.files_scanned,
+    )?;
+    Ok(())
 }
 
 fn dispatch_plan(cli: &Cli, plan: &Plan) -> Result<u8> {
