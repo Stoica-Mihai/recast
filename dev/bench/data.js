@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780082999581,
+  "lastUpdate": 1780181790001,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -779,6 +779,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 9807925,
             "range": "± 134185",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "fb8b79ddc2fab94edf1cec03ca5d3bb1d91fd322",
+          "message": "fix: show REPLACEMENT as optional in usage hint",
+          "timestamp": "2026-05-31T01:52:50+03:00",
+          "tree_id": "30a14a86d18694f07bcee7df3f0295dc69b6d8a6",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/fb8b79ddc2fab94edf1cec03ca5d3bb1d91fd322"
+        },
+        "date": 1780181789132,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2311,
+            "range": "± 191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 615072,
+            "range": "± 3267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1804293,
+            "range": "± 104454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2754266,
+            "range": "± 188336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 7042092,
+            "range": "± 226606",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3189378,
+            "range": "± 18558",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3596608,
+            "range": "± 128930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4838250,
+            "range": "± 193254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 10276070,
+            "range": "± 151824",
             "unit": "ns/iter"
           }
         ]
