@@ -7,6 +7,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.1.15] — 2026-05-31
+
 ### Added
 
 - `--search` flag: find match locations (file:line:col:snippet) without rewriting. Outputs grep-like human text or structured JSON (`kind: "search"`). Supports all filter flags, `--at-least`/`--at-most` guard, `--json`, `--quiet`, `--verbose`, and structural mode (`--lang` + `--ast`/`--query`).
