@@ -491,6 +491,7 @@ mod search_tests {
             r#"(function_item name: (identifier) @name) @root"#,
         )
         .unwrap();
+        assert_eq!(results.len(), 1);
         assert_eq!(results[0].capture.as_deref(), Some("root"));
     }
 
