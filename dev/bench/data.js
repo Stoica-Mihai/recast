@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785952956676,
+  "lastUpdate": 1789744224156,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -1091,6 +1091,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 10556767,
             "range": "± 203889",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "a8fbfcb1f3d73de3ad87fbdc9d7d5ec336cc02e3",
+          "message": "chore: bump to 0.2.0\n\nMinor rather than patch, because three changes break callers:\n\n- A zero-match run exits 2. A --check CI gate on a clean tree and a\n  retry loop re-running a finished rewrite both need --at-least 0.\n- The non_convergent JSON discriminant became three.\n- The error object gained `remedies`, Error::Locked gained a field, and\n  most error wording changed.\n\nCalling that a patch would tell people it is safe to take.\n\nAlso corrects docs that were already wrong:\n\n- README said \"Status: alpha (v0.1.6)\" while the workspace was on\n  0.1.15 -- nine releases of drift.\n- AGENTS.md listed recast-cli and recast-core as the crates.io\n  releases; recast-mcp has shipped there too, with its own README and\n  badge, so only the operating manual disagreed. Noted the publish\n  ordering while there: recast-core first, since the other two pin an\n  exact version the registry has to already have.\n- docs/src/install.md covered only `cargo install recast-cli`, so the\n  hosted install page never told anyone how to get the MCP server.\n  Added a section and a README badge.\n\nVerified the release workflow can read this: ran release.yml's awk\nextraction against the new heading, which pulls 183 lines and stops\nbefore the 0.1.15 section.",
+          "timestamp": "2026-09-18T18:04:19+03:00",
+          "tree_id": "368c3bba13dfd607ea21ccf392676441a4a3fc49",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/a8fbfcb1f3d73de3ad87fbdc9d7d5ec336cc02e3"
+        },
+        "date": 1789744223368,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2444,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 634255,
+            "range": "± 12698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1607860,
+            "range": "± 86628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 2615949,
+            "range": "± 118447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 7025879,
+            "range": "± 172128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3140486,
+            "range": "± 12081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3328639,
+            "range": "± 129129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 4626600,
+            "range": "± 130877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 10412175,
+            "range": "± 118973",
             "unit": "ns/iter"
           }
         ]
