@@ -140,7 +140,17 @@ async fn preview_refuses_non_convergent_pattern() {
     let err =
         server().recast_preview(Parameters(rewrite_args("a", "aa", dir.path()))).await.unwrap_err();
     let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
-    assert_eq!(data["kind"], "non_convergent", "wrong kind: {data}");
+    assert_eq!(data["kind"], "non_convergent_replacement", "wrong kind: {data}");
+}
+
+#[tokio::test]
+async fn preview_distinguishes_context_driven_non_convergence() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "aabb\n").unwrap();
+    let err =
+        server().recast_preview(Parameters(rewrite_args("ab", "a", dir.path()))).await.unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+    assert_eq!(data["kind"], "non_convergent_context", "wrong kind: {data}");
 }
 
 #[tokio::test]

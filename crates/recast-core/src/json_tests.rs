@@ -93,8 +93,20 @@ fn error_json_too_many_matches() {
 }
 
 #[test]
-fn error_json_non_convergent() {
-    let err = Error::NonConvergent { path: PathBuf::from("src/a.rs"), extra: 3 };
+fn error_json_non_convergent_replacement() {
+    let err = Error::NonConvergentReplacement { path: PathBuf::from("src/a.rs"), extra: 3 };
+    assert_snapshot!(from_error(&err, 3).to_line().unwrap());
+}
+
+#[test]
+fn error_json_non_convergent_context() {
+    let err = Error::NonConvergentContext { path: PathBuf::from("src/a.rs"), extra: 3 };
+    assert_snapshot!(from_error(&err, 3).to_line().unwrap());
+}
+
+#[test]
+fn error_json_non_convergent_script() {
+    let err = Error::NonConvergentScript { path: PathBuf::from("src/a.rs"), extra: 3 };
     assert_snapshot!(from_error(&err, 3).to_line().unwrap());
 }
 
@@ -123,7 +135,18 @@ fn error_kind_covers_every_error_variant() {
     let cases = [
         (Error::TooFewMatches { found: 0, required: 1 }, ErrorKind::TooFewMatches),
         (Error::TooManyMatches { found: 5, allowed: 3 }, ErrorKind::TooManyMatches),
-        (Error::NonConvergent { path: PathBuf::from("x"), extra: 1 }, ErrorKind::NonConvergent),
+        (
+            Error::NonConvergentReplacement { path: PathBuf::from("x"), extra: 1 },
+            ErrorKind::NonConvergentReplacement,
+        ),
+        (
+            Error::NonConvergentContext { path: PathBuf::from("x"), extra: 1 },
+            ErrorKind::NonConvergentContext,
+        ),
+        (
+            Error::NonConvergentScript { path: PathBuf::from("x"), extra: 1 },
+            ErrorKind::NonConvergentScript,
+        ),
         (Error::TooManyFiles { count: 2, limit: 1 }, ErrorKind::TooManyFiles),
         (
             Error::FileTooLarge { path: PathBuf::from("x"), size: 2, limit: 1 },

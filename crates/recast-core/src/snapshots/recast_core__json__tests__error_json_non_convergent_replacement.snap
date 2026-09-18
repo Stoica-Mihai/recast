@@ -1,0 +1,6 @@
+---
+source: crates/recast-core/src/json_tests.rs
+assertion_line: 98
+expression: "from_error(&err, 3).to_line().unwrap()"
+---
+{"kind":"error","error":"non_convergent_replacement","message":"pattern is non-convergent: the replacement itself still matches the pattern, so re-applying the rewrite to src/a.rs would produce 3 more match(es); narrow the pattern (e.g. word boundaries) or pass --allow-non-convergent to override","exit_code":3}

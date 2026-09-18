@@ -67,7 +67,9 @@ as a header that appears in that order; the mode-specific count
   "error":
       "too_few_matches"
     | "too_many_matches"
-    | "non_convergent"
+    | "non_convergent_replacement"
+    | "non_convergent_context"
+    | "non_convergent_script"
     | "too_many_files"
     | "file_too_large"
     | "invalid_regex"

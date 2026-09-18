@@ -27,6 +27,23 @@ fn non_convergent_rewrite_is_detected() {
 }
 
 #[test]
+fn replacement_containing_the_pattern_is_statically_non_convergent() {
+    let p = CompiledPattern::compile(
+        "Outcome",
+        "ReadOutcome",
+        &PatternOptions { literal: true, ..Default::default() },
+    )
+    .unwrap();
+    assert!(!p.is_convergent());
+}
+
+#[test]
+fn context_driven_regrowth_is_invisible_to_the_static_probe() {
+    let p = CompiledPattern::compile("ab", "a", &PatternOptions::default()).unwrap();
+    assert!(p.is_convergent());
+}
+
+#[test]
 fn capture_group_in_replacement_does_not_break_convergence_probe() {
     let p = CompiledPattern::compile(r"foo(\d+)", "bar$1", &PatternOptions::default()).unwrap();
     assert!(p.is_convergent());

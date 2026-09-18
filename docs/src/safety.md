@@ -14,8 +14,15 @@ Override with `--at-least 0` if you really do want to allow no-op runs.
 ## 2. Idempotency / convergence
 
 Before any write, recast re-applies the rewrite to its own post-image.
-If any file would change again, the run is aborted with a
-`non_convergent` error.
+If any file would change again, the run is aborted with one of three
+errors, split by cause because the fixes differ:
+`non_convergent_replacement` (the replacement still matches the pattern
+— narrow it, usually with word boundaries), `non_convergent_context`
+(the replacement is clean but the rewrite pulls surrounding text into a
+new match — word boundaries will not help), and
+`non_convergent_script` (a `--script` run, where the replacement is
+computed per match so the cause is not knowable up front). All three
+name `--allow-non-convergent` as the override.
 
 Examples that pass:
 - `'old' -> 'new'`

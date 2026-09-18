@@ -29,9 +29,19 @@ pub enum Error {
     TooManyFiles { count: usize, limit: usize },
 
     #[error(
-        "pattern is non-convergent: re-applying it to the rewrite of {path} would produce {extra} more match(es)"
+        "pattern is non-convergent: the replacement itself still matches the pattern, so re-applying the rewrite to {path} would produce {extra} more match(es); narrow the pattern (e.g. word boundaries) or pass --allow-non-convergent to override"
     )]
-    NonConvergent { path: PathBuf, extra: usize },
+    NonConvergentReplacement { path: PathBuf, extra: usize },
+
+    #[error(
+        "pattern is non-convergent: the replacement is clean, but the rewrite brings surrounding text in {path} into {extra} new match(es); word boundaries will not help — fix the pattern's overlap or pass --allow-non-convergent to override"
+    )]
+    NonConvergentContext { path: PathBuf, extra: usize },
+
+    #[error(
+        "pattern is non-convergent: re-applying the script to the rewrite of {path} would produce {extra} more match(es); the script's output is dynamic, so the cause cannot be narrowed statically — pass --allow-non-convergent to override"
+    )]
+    NonConvergentScript { path: PathBuf, extra: usize },
 
     #[error("match-count guard violated: found {found}, required at least {required}")]
     TooFewMatches { found: usize, required: usize },
@@ -86,7 +96,9 @@ pub enum ErrorKind {
     Io,
     FileTooLarge,
     TooManyFiles,
-    NonConvergent,
+    NonConvergentReplacement,
+    NonConvergentContext,
+    NonConvergentScript,
     TooFewMatches,
     TooManyMatches,
     ScriptParse,
@@ -112,7 +124,9 @@ impl Error {
             Error::Io { .. } => ErrorKind::Io,
             Error::FileTooLarge { .. } => ErrorKind::FileTooLarge,
             Error::TooManyFiles { .. } => ErrorKind::TooManyFiles,
-            Error::NonConvergent { .. } => ErrorKind::NonConvergent,
+            Error::NonConvergentReplacement { .. } => ErrorKind::NonConvergentReplacement,
+            Error::NonConvergentContext { .. } => ErrorKind::NonConvergentContext,
+            Error::NonConvergentScript { .. } => ErrorKind::NonConvergentScript,
             Error::TooFewMatches { .. } => ErrorKind::TooFewMatches,
             Error::TooManyMatches { .. } => ErrorKind::TooManyMatches,
             Error::ScriptParse(_) => ErrorKind::ScriptParse,

@@ -64,7 +64,7 @@ on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 Each tool accepts typed JSON args (validated against the schema the
 server advertises during MCP handshake) so the agent can't malform
 calls. Engine errors propagate as MCP errors with a stable `kind`
-discriminator (`too_few_matches`, `non_convergent`, `io`, …) — agents
+discriminator (`too_few_matches`, `non_convergent_replacement`, `io`, …) — agents
 branch on `kind` instead of string-matching messages.
 
 ## Make the agent actually use it

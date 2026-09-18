@@ -35,6 +35,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   `PlanOptions` and `docs/src/safety.md` but had no effect before this
   change, because the early return swallowed it in both directions.
 
+- **Breaking: `non_convergent` split into three error kinds.** A rewrite
+  can fail to converge for two genuinely different reasons, and they
+  needed opposite fixes while printing identical text:
+
+  - `non_convergent_replacement` — the replacement still matches the
+    pattern (`'Outcome'` → `'ReadOutcome'`). Narrowing the pattern, e.g.
+    with word boundaries, fixes it. Decidable from the pattern alone via
+    `CompiledPattern::is_convergent`.
+  - `non_convergent_context` — the replacement is clean, but the rewrite
+    pulls surrounding text into a new match (`'ab'` → `'a'` over
+    `aabb`). Word boundaries will not help. Only observable per file.
+  - `non_convergent_script` — a `--script` run. The replacement is
+    computed per match, so neither cause can be attributed.
+
+  All three messages now name `--allow-non-convergent`, which the single
+  old message omitted even though the neighbouring `SyntaxRegression`
+  error named its own override. Agents matching `error == "non_convergent"`
+  must update; a `startswith("non_convergent")` test still works.
+
 ## [0.1.15] — 2026-05-31
 
 ### Added

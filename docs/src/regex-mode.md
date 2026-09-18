@@ -38,9 +38,20 @@ recast --at-least 0 'maybe' 'def' src/     # allow zero matches (no guard)
 ## Idempotency check
 
 The plan step reapplies the pattern to its own post-image. If any file
-would change again, recast aborts with `non_convergent` — the rewrite
-isn't safe to run twice. Override with `--allow-non-convergent` if you
-know what you're doing.
+would change again, recast aborts — the rewrite isn't safe to run twice.
+Override with `--allow-non-convergent` if you know what you're doing.
+
+A rewrite can fail to converge for two different reasons, and they need
+different fixes, so they get different error kinds:
+
+| Kind | Cause | Fix |
+|---|---|---|
+| `non_convergent_replacement` | The replacement still matches the pattern. `'Outcome' -> 'ReadOutcome'` | Narrow the pattern — word boundaries usually do it |
+| `non_convergent_context` | The replacement is clean; the rewrite pulls surrounding text into a new match. `'ab' -> 'a'` over `aabb` | Word boundaries won't help. The pattern overlaps itself; rewrite it |
+
+A third kind, `non_convergent_script`, covers `--script` runs. The
+script computes its replacement per match, so recast can't say which of
+the two causes applies.
 
 Examples of patterns recast rejects:
 

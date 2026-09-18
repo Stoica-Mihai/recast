@@ -127,6 +127,11 @@ pub fn plan_rewrite<P: AsRef<Path>>(
     let files = scan(roots, opts)?;
     let files_scanned = files.len();
 
+    let non_convergence = if compiled.is_convergent() {
+        NonConvergence::Context
+    } else {
+        NonConvergence::Replacement
+    };
     let results: Vec<Result<Option<FileChange>>> = files
         .par_iter()
         .map(|path| {
@@ -136,6 +141,7 @@ pub fn plan_rewrite<P: AsRef<Path>>(
                 opts,
                 |p, s| Ok(rewrite_text(p, s)),
                 regex_convergence_check,
+                non_convergence,
             )
         })
         .collect();
@@ -145,6 +151,29 @@ pub fn plan_rewrite<P: AsRef<Path>>(
 
 fn regex_convergence_check(pattern: &CompiledPattern, after: &str) -> Result<usize> {
     Ok(pattern.regex().find_iter(after).count())
+}
+
+/// Which of the two ways a rewrite can fail to converge, so the error
+/// can give advice that fits. `Replacement` is decidable from the
+/// pattern alone via [`CompiledPattern::is_convergent`]; `Context` is
+/// only observable per file; `Script` is neither, because the
+/// replacement is computed at match time.
+#[derive(Debug, Clone, Copy)]
+enum NonConvergence {
+    Replacement,
+    Context,
+    Script,
+}
+
+impl NonConvergence {
+    fn error(self, path: &Path, extra: usize) -> Error {
+        let path = path.to_path_buf();
+        match self {
+            Self::Replacement => Error::NonConvergentReplacement { path, extra },
+            Self::Context => Error::NonConvergentContext { path, extra },
+            Self::Script => Error::NonConvergentScript { path, extra },
+        }
+    }
 }
 
 /// Like [`plan_rewrite`] but each match drives a Rhai script callback
@@ -176,7 +205,7 @@ pub fn plan_rewrite_scripted<P: AsRef<Path>>(
                     let outcome = rewrite_text_scripted(p, worker, s)?;
                     Ok(if outcome.after != s { outcome.matches } else { 0 })
                 };
-                process_one(&compiled, path, opts, rewrite, converge)
+                process_one(&compiled, path, opts, rewrite, converge, NonConvergence::Script)
             },
         )
         .collect();
@@ -259,6 +288,7 @@ fn process_one<R, C>(
     opts: &PlanOptions,
     rewrite: R,
     convergence_check: C,
+    non_convergence: NonConvergence,
 ) -> Result<Option<FileChange>>
 where
     R: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
@@ -278,7 +308,7 @@ where
     if !opts.allow_non_convergent {
         let extra = convergence_check(pattern, &outcome.after)?;
         if extra > 0 {
-            return Err(Error::NonConvergent { path: path.to_path_buf(), extra });
+            return Err(non_convergence.error(path, extra));
         }
     }
 

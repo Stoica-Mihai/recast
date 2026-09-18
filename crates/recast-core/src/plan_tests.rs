@@ -76,11 +76,70 @@ fn scripted_plan_zero_matches_violates_default_guard() {
     assert!(matches!(err, Error::TooFewMatches { found: 0, required: 1 }), "{err:?}");
 }
 
+fn literal_opts() -> PlanOptions {
+    PlanOptions {
+        pattern_options: PatternOptions { literal: true, ..Default::default() },
+        ..Default::default()
+    }
+}
+
 #[test]
 fn plan_rejects_non_convergent_pattern() {
     let dir = fixture(&[("a.txt", "abc\n")]);
     let err = plan_rewrite("a", "aa", &[dir.path()], &PlanOptions::default()).unwrap_err();
-    assert!(matches!(err, Error::NonConvergent { .. }));
+    assert!(matches!(err, Error::NonConvergentReplacement { .. }), "{err:?}");
+}
+
+#[test]
+fn non_convergent_error_names_the_override_flag() {
+    let dir = fixture(&[("a.txt", "abc\n")]);
+    let err = plan_rewrite("a", "aa", &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(err.to_string().contains("--allow-non-convergent"), "{err}");
+}
+
+#[test]
+fn the_two_non_convergence_causes_produce_different_messages() {
+    let by_replacement = fixture(&[("a.txt", "let x = Outcome;\n")]);
+    let replacement_msg =
+        plan_rewrite("Outcome", "ReadOutcome", &[by_replacement.path()], &literal_opts())
+            .unwrap_err()
+            .to_string();
+
+    let by_context = fixture(&[("b.txt", "aabb\n")]);
+    let context_msg = plan_rewrite("ab", "a", &[by_context.path()], &PlanOptions::default())
+        .unwrap_err()
+        .to_string();
+
+    assert_ne!(replacement_msg, context_msg, "both causes still print the same advice");
+    assert!(replacement_msg.contains("--allow-non-convergent"), "{replacement_msg}");
+    assert!(context_msg.contains("--allow-non-convergent"), "{context_msg}");
+}
+
+#[test]
+fn non_convergent_replacement_blames_the_replacement() {
+    let dir = fixture(&[("a.txt", "let x = Outcome;\n")]);
+    let err = plan_rewrite("Outcome", "ReadOutcome", &[dir.path()], &literal_opts()).unwrap_err();
+    assert!(matches!(err, Error::NonConvergentReplacement { .. }), "{err:?}");
+    assert!(err.to_string().contains("replacement"), "{err}");
+}
+
+#[test]
+fn non_convergent_context_clears_the_replacement() {
+    let dir = fixture(&[("a.txt", "aabb\n")]);
+    let err = plan_rewrite("ab", "a", &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(matches!(err, Error::NonConvergentContext { .. }), "{err:?}");
+    assert!(err.to_string().contains("surrounding"), "{err}");
+}
+
+#[cfg(feature = "script")]
+#[test]
+fn non_convergent_script_is_not_blamed_on_a_static_replacement() {
+    let dir = fixture(&[("a.txt", "a\n")]);
+    let script = crate::script::ScriptRewriter::from_source(r#""aa""#).unwrap();
+    let err =
+        plan_rewrite_scripted("a", &script, &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(matches!(err, Error::NonConvergentScript { .. }), "{err:?}");
+    assert!(err.to_string().contains("--allow-non-convergent"), "{err}");
 }
 
 #[test]

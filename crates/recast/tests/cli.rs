@@ -335,6 +335,62 @@ fn structural_mode_stdin_uses_capture_template() {
 }
 
 #[test]
+fn non_convergent_replacement_blames_the_replacement_and_names_the_override() {
+    let dir = fixture(&[("a.txt", "let x = Outcome;\n")]);
+    recast()
+        .arg("--literal")
+        .arg("Outcome")
+        .arg("ReadOutcome")
+        .arg(dir.path())
+        .assert()
+        .code(3)
+        .stderr(
+            predicate::str::contains("replacement itself still matches")
+                .and(predicate::str::contains("--allow-non-convergent")),
+        );
+}
+
+#[test]
+fn non_convergent_context_gives_different_advice() {
+    let dir = fixture(&[("a.txt", "aabb\n")]);
+    recast().arg("ab").arg("a").arg(dir.path()).assert().code(3).stderr(
+        predicate::str::contains("surrounding text")
+            .and(predicate::str::contains("word boundaries will not help"))
+            .and(predicate::str::contains("--allow-non-convergent")),
+    );
+}
+
+#[test]
+fn non_convergent_json_kind_distinguishes_the_two_causes() {
+    let by_replacement = fixture(&[("a.txt", "let x = Outcome;\n")]);
+    recast()
+        .arg("--json")
+        .arg("--literal")
+        .arg("Outcome")
+        .arg("ReadOutcome")
+        .arg(by_replacement.path())
+        .assert()
+        .code(3)
+        .stdout(predicate::str::contains(r#""error":"non_convergent_replacement""#));
+
+    let by_context = fixture(&[("b.txt", "aabb\n")]);
+    recast()
+        .arg("--json")
+        .arg("ab")
+        .arg("a")
+        .arg(by_context.path())
+        .assert()
+        .code(3)
+        .stdout(predicate::str::contains(r#""error":"non_convergent_context""#));
+}
+
+#[test]
+fn allow_non_convergent_overrides_both_causes() {
+    let dir = fixture(&[("a.txt", "aabb\n")]);
+    recast().arg("--allow-non-convergent").arg("ab").arg("a").arg(dir.path()).assert().success();
+}
+
+#[test]
 fn syntax_regression_guard_rejects_and_leaves_file_untouched() {
     let body = "fn a() {\n    work();\n}\nfn b() {}\n";
     let dir = fixture(&[("a.rs", body)]);

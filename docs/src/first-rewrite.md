@@ -60,4 +60,6 @@ recast --apply --at-least 0 'OldName' 'NewName' src/
 ```
 
 If the pattern is non-convergent (e.g. `'a' -> 'aa'`), `recast` refuses
-with a `non_convergent` error before touching any file.
+before writing anything, with a `non_convergent_replacement`,
+`non_convergent_context`, or `non_convergent_script` error depending on
+why. See [Safety guarantees](./safety.md).
