@@ -66,6 +66,77 @@ fn structural_args(path: &std::path::Path) -> StructuralArgs {
     }
 }
 
+fn rename_args(pairs: &[(&str, &str)], path: &std::path::Path) -> RenameArgs {
+    RenameArgs {
+        renames: pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
+        paths: vec![path.to_string_lossy().into_owned()],
+        apply: false,
+        hidden: false,
+        no_ignore: false,
+        follow_symlinks: false,
+        types: vec![],
+        types_not: vec![],
+        globs: vec![],
+        at_least: Some(1),
+        at_most: None,
+        allow_syntax_errors: false,
+        max_bytes: DEFAULT_MAX_BYTES,
+        max_files: DEFAULT_MAX_FILES,
+    }
+}
+
+#[tokio::test]
+async fn rename_tool_keeps_dependent_renames_apart() {
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("c.rs");
+    fs::write(&target, "use Foo;\nuse Bar;\n").unwrap();
+
+    let mut args = rename_args(&[("Foo", "Bar"), ("Bar", "Baz")], dir.path());
+    args.apply = true;
+    server().recast_rename(Parameters(args)).await.unwrap();
+
+    assert_eq!(fs::read_to_string(&target).unwrap(), "use Bar;\nuse Baz;\n");
+}
+
+#[tokio::test]
+async fn rename_tool_says_when_a_map_is_correct_only_once() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "Foo Bar\n").unwrap();
+
+    let out = server()
+        .recast_rename(Parameters(rename_args(&[("Foo", "Bar"), ("Bar", "Baz")], dir.path())))
+        .await
+        .unwrap();
+    let body = format!("{out:?}");
+    assert!(body.contains("correct exactly once"), "missing rerun note: {body}");
+}
+
+#[tokio::test]
+async fn rename_tool_says_when_a_map_is_rerunnable() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "Foo Bar\n").unwrap();
+
+    let out = server()
+        .recast_rename(Parameters(rename_args(&[("Foo", "Qux"), ("Bar", "Quux")], dir.path())))
+        .await
+        .unwrap();
+    let body = format!("{out:?}");
+    assert!(body.contains("re-runnable"), "missing rerun note: {body}");
+}
+
+#[tokio::test]
+async fn rename_tool_refuses_a_map_that_feeds_itself() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "Foo\n").unwrap();
+
+    let err = server()
+        .recast_rename(Parameters(rename_args(&[("Foo", "Foo Bar")], dir.path())))
+        .await
+        .unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+    assert_eq!(data["kind"], "rename_map_diverges", "wrong kind: {data}");
+}
+
 fn extract_text(result: CallToolResult) -> String {
     assert!(!result.is_error.unwrap_or(false), "tool returned isError=true: {result:?}");
     match &result.content[0].raw {

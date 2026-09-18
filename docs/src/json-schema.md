@@ -70,6 +70,8 @@ as a header that appears in that order; the mode-specific count
     | "non_convergent_replacement"
     | "non_convergent_context"
     | "non_convergent_script"
+    | "invalid_rename_map"
+    | "rename_map_diverges"
     | "too_many_files"
     | "file_too_large"
     | "invalid_regex"

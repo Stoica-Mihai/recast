@@ -1,9 +1,11 @@
 //! MCP tool surface for the recast engine.
 //!
-//! Four tools, 1:1 with the planner API:
+//! Six tools, 1:1 with the planner API:
 //! - `recast_preview` — dry-run a regex rewrite, return the per-file plan.
 //! - `recast_apply` — atomically apply a regex rewrite to disk.
+//! - `recast_rename` — N whole-word renames in a single pass.
 //! - `recast_structural` — same shape via tree-sitter `--ast` patterns.
+//! - `recast_search` — match locations, no rewriting.
 //! - `recast_recover` — sweep leftover `.recast.bak.*` / `.tmp.*` siblings.
 //!
 //! Each tool wraps the corresponding `recast-core` entry point directly
@@ -15,10 +17,10 @@
 use std::path::PathBuf;
 
 use recast_core::{
-    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, ScriptRewriter, SearchOptions,
-    WalkOptions, acquire_workspace_lock_for_paths, apply_changes, compile_friendly_query, json,
-    plan_rewrite, plan_rewrite_scripted, plan_search, plan_structural_rewrite,
-    plan_structural_search, recover_sweep,
+    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, RenameMap, ScriptRewriter,
+    SearchOptions, WalkOptions, acquire_workspace_lock_for_paths, apply_changes,
+    compile_friendly_query, json, plan_rename, plan_rewrite, plan_rewrite_scripted, plan_search,
+    plan_structural_rewrite, plan_structural_search, recover_sweep,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -217,6 +219,53 @@ impl RecastServer {
             Ok(CallToolResult::success(vec![Content::json(json::from_apply(&plan, &outcome))?]))
         } else {
             Ok(CallToolResult::success(vec![Content::json(json::from_plan(&plan))?]))
+        }
+    }
+
+    #[tool(description = "Rename N names across a tree in ONE pass. Use this instead of \
+                       several `recast_apply` calls whenever the renames touch each other — \
+                       that is the case it exists for.\n\
+                       \n\
+                       THE FAILURE IT PREVENTS: `Foo`→`Bar` then `Bar`→`Baz` as two separate \
+                       calls turns the original `Foo` AND the original `Bar` into `Baz`. Both \
+                       calls succeed, every guard passes, and the two names are now \
+                       indistinguishable. One `recast_rename` with both entries leaves the \
+                       original `Foo` as `Bar` and the original `Bar` as `Baz`.\n\
+                       \n\
+                       ACCEPTED: permutations (`Foo`→`Bar`, `Bar`→`Foo`) and chains \
+                       (`Foo`→`Bar`, `Bar`→`Baz`). Both are correct exactly once — the \
+                       response says so — because a replacement reuses a renamed name.\n\
+                       REFUSED: a map that feeds itself, e.g. `Foo`→`Foo Bar`, which would \
+                       grow on every run.\n\
+                       \n\
+                       Names match as WHOLE WORDS and are literal, not regexes. For \
+                       substring or pattern rewrites use `recast_apply`; for shape-sensitive \
+                       ones use `recast_structural`.\n\
+                       \n\
+                       EXAMPLE:\n\
+                       \x20  { \"renames\": {\"Foo\":\"Bar\", \"Bar\":\"Baz\"},\n\
+                       \x20    \"paths\":[\"src/\"], \"apply\":true }")]
+    async fn recast_rename(
+        &self,
+        Parameters(args): Parameters<RenameArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let map =
+            RenameMap::new(args.renames.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                .map_err(to_mcp_err)?;
+        let paths = args.paths_as_pathbufs();
+        let plan = plan_rename(&map, &paths, &args.plan_options()).map_err(to_mcp_err)?;
+        if args.apply {
+            let _lock = acquire_workspace_lock_for_paths(&paths).map_err(to_mcp_err)?;
+            let outcome = apply_changes(&plan).map_err(to_mcp_err)?;
+            Ok(CallToolResult::success(vec![
+                Content::json(json::from_apply(&plan, &outcome))?,
+                Content::text(rerun_note(&map)),
+            ]))
+        } else {
+            Ok(CallToolResult::success(vec![
+                Content::json(json::from_plan(&plan))?,
+                Content::text(rerun_note(&map)),
+            ]))
         }
     }
 
@@ -641,6 +690,73 @@ impl RewriteArgs {
     }
 }
 
+/// Arguments for `recast_rename`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct RenameArgs {
+    /// Old name -> new name. Every entry lands in a single pass, so
+    /// dependent renames cannot feed each other. Names match as whole
+    /// words and are taken literally, not as regexes.
+    pub renames: std::collections::BTreeMap<String, String>,
+    /// Paths or globs to scan.
+    #[serde(default = "default_paths")]
+    pub paths: Vec<String>,
+    /// Apply changes atomically. Default false = dry-run preview only.
+    #[serde(default)]
+    pub apply: bool,
+    /// Shared filters (mirrors RewriteArgs).
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub no_ignore: bool,
+    #[serde(default)]
+    pub follow_symlinks: bool,
+    #[serde(default)]
+    pub types: Vec<String>,
+    #[serde(default)]
+    pub types_not: Vec<String>,
+    #[serde(default)]
+    pub globs: Vec<String>,
+    #[serde(default = "default_at_least")]
+    pub at_least: Option<usize>,
+    #[serde(default)]
+    pub at_most: Option<usize>,
+    #[serde(default)]
+    pub allow_syntax_errors: bool,
+    #[serde(default = "default_max_bytes")]
+    pub max_bytes: u64,
+    #[serde(default = "default_max_files")]
+    pub max_files: usize,
+}
+
+impl RenameArgs {
+    fn paths_as_pathbufs(&self) -> Vec<PathBuf> {
+        self.paths.iter().map(PathBuf::from).collect()
+    }
+
+    fn plan_options(&self) -> PlanOptions {
+        PlanOptions {
+            pattern_options: PatternOptions::default(),
+            walk_options: walk_options_from(
+                self.hidden,
+                self.no_ignore,
+                self.follow_symlinks,
+                &self.types,
+                &self.types_not,
+                &self.globs,
+            ),
+            at_least: self.at_least,
+            at_most: self.at_most,
+            // A rename map validates its own stability when built; the
+            // per-file idempotency probe would reject exactly the swaps
+            // and chains this mode exists to allow.
+            allow_non_convergent: true,
+            allow_syntax_errors: self.allow_syntax_errors,
+            max_bytes: self.max_bytes,
+            max_files: self.max_files,
+        }
+    }
+}
+
 impl StructuralArgs {
     fn paths_as_pathbufs(&self) -> Vec<PathBuf> {
         self.paths.iter().map(PathBuf::from).collect()
@@ -701,6 +817,19 @@ fn invalid_args(msg: &str) -> McpError {
 /// the typed kind so callers can branch on the error variant without
 /// string-matching. The MCP error payload carries `{kind, message}` —
 /// agents can dispatch on `kind` programmatically.
+/// Whether this map survives a second run, said in words, because the
+/// difference is invisible in the plan JSON.
+fn rerun_note(map: &RenameMap) -> String {
+    if map.rerunnable() {
+        "This rename map is re-runnable: no replacement reuses a renamed name.".to_owned()
+    } else {
+        "This rename map is correct exactly once: a replacement reuses a name the map also \
+         renames, so running it again would keep rewriting. Do not retry it against a tree it \
+         already succeeded on."
+            .to_owned()
+    }
+}
+
 fn to_mcp_err(err: recast_core::Error) -> McpError {
     let kind = err.kind();
     let kind_str = serde_json::to_value(kind)

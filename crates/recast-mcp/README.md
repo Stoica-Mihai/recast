@@ -58,7 +58,9 @@ on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 |---|---|
 | `recast_preview`    | Dry-run a regex rewrite, return per-file plan + unified diffs. |
 | `recast_apply`      | Atomically apply a regex rewrite to disk. Two-phase commit with rollback. |
+| `recast_rename`     | N whole-word renames in a single pass, so dependent renames can't collapse into each other. |
 | `recast_structural` | Tree-sitter `--ast` rewrite (dry-run or apply). Friendly `fn $NAME() {}` patterns supported. |
+| `recast_search`     | Find match locations (file/line/col/snippet/capture) without rewriting. |
 | `recast_recover`    | Reconcile leftover `.recast.bak.*` / `.recast.tmp.*` siblings from a crashed apply. |
 
 Each tool accepts typed JSON args (validated against the schema the

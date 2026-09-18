@@ -335,6 +335,152 @@ fn structural_mode_stdin_uses_capture_template() {
 }
 
 #[test]
+fn rename_keeps_dependent_renames_apart_in_one_pass() {
+    let dir = fixture(&[("c.rs", "use Foo;\nuse Bar;\nfn f(a: Foo, b: Bar) {}\n")]);
+    recast()
+        .arg("--apply")
+        .arg("--rename")
+        .arg("Foo=Bar")
+        .arg("--rename")
+        .arg("Bar=Baz")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("c.rs")).unwrap(),
+        "use Bar;\nuse Baz;\nfn f(a: Bar, b: Baz) {}\n"
+    );
+}
+
+#[test]
+fn two_sequential_runs_still_collapse_which_is_why_rename_exists() {
+    let dir = fixture(&[("c.rs", "use Foo;\nuse Bar;\n")]);
+    recast().arg("--apply").arg(r"\bFoo\b").arg("Bar").arg(dir.path()).assert().success();
+    recast().arg("--apply").arg(r"\bBar\b").arg("Baz").arg(dir.path()).assert().success();
+    assert_eq!(fs::read_to_string(dir.path().join("c.rs")).unwrap(), "use Baz;\nuse Baz;\n");
+}
+
+#[test]
+fn rename_swaps_two_names() {
+    let dir = fixture(&[("a.txt", "Foo Bar Foo\n")]);
+    recast()
+        .arg("--apply")
+        .arg("--rename")
+        .arg("Foo=Bar")
+        .arg("--rename")
+        .arg("Bar=Foo")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "Bar Foo Bar\n");
+}
+
+#[test]
+fn rename_says_when_the_map_is_correct_only_once() {
+    let dir = fixture(&[("a.txt", "Foo Bar\n")]);
+    recast()
+        .arg("--rename")
+        .arg("Foo=Bar")
+        .arg("--rename")
+        .arg("Bar=Baz")
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("correct exactly once"));
+}
+
+#[test]
+fn rename_stays_quiet_when_the_map_is_rerunnable() {
+    let dir = fixture(&[("a.txt", "Foo Bar\n")]);
+    recast()
+        .arg("--rename")
+        .arg("Foo=Qux")
+        .arg("--rename")
+        .arg("Bar=Quux")
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("correct exactly once").not());
+}
+
+#[test]
+fn rename_refuses_a_map_that_feeds_itself() {
+    let dir = fixture(&[("a.txt", "Foo\n")]);
+    recast()
+        .arg("--rename")
+        .arg("Foo=Foo Bar")
+        .arg(dir.path())
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("does not settle"));
+}
+
+#[test]
+fn rename_json_error_kind_for_a_diverging_map() {
+    let dir = fixture(&[("a.txt", "Foo\n")]);
+    recast()
+        .arg("--json")
+        .arg("--rename")
+        .arg("Foo=Foo Bar")
+        .arg(dir.path())
+        .assert()
+        .code(3)
+        .stdout(predicate::str::contains(r#""error":"rename_map_diverges""#));
+}
+
+#[test]
+fn rename_rejects_a_spec_without_an_equals_sign() {
+    let dir = fixture(&[("a.txt", "Foo\n")]);
+    recast().arg("--rename").arg("Foo").arg(dir.path()).assert().failure();
+}
+
+#[test]
+fn rename_matches_whole_words_only() {
+    let dir = fixture(&[("a.txt", "Foo Foobar barFoo\n")]);
+    recast().arg("--apply").arg("--rename").arg("Foo=X").arg(dir.path()).assert().success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "X Foobar barFoo\n");
+}
+
+#[test]
+fn rename_honors_the_match_guard() {
+    let dir = fixture(&[("a.txt", "nothing here\n")]);
+    recast()
+        .arg("--rename")
+        .arg("Foo=Bar")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("match-count guard violated"));
+}
+
+#[test]
+fn rename_works_on_stdin() {
+    recast()
+        .arg("--stdin")
+        .arg("--rename")
+        .arg("Foo=Bar")
+        .arg("--rename")
+        .arg("Bar=Baz")
+        .write_stdin("Foo Bar\n")
+        .assert()
+        .success()
+        .stdout("Bar Baz\n");
+}
+
+#[test]
+fn rename_conflicts_with_other_pattern_modes() {
+    for flag in ["--literal", "--word", "--ignore-case", "--search"] {
+        recast()
+            .arg("--rename")
+            .arg("Foo=Bar")
+            .arg(flag)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("cannot be used with"));
+    }
+}
+
+#[test]
 fn word_flag_rewrites_only_whole_words() {
     let dir = fixture(&[("a.txt", "foo foobar barfoo foo\n")]);
     recast().arg("--apply").arg("--word").arg("foo").arg("X").arg(dir.path()).assert().success();

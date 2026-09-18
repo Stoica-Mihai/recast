@@ -43,6 +43,14 @@ pub enum Error {
     )]
     NonConvergentScript { path: PathBuf, extra: usize },
 
+    #[error("invalid rename map: {reason}")]
+    InvalidRenameMap { reason: String },
+
+    #[error(
+        "rename map does not settle: re-applying it to its own replacement of `{key}` -> `{value}` kept producing new text after {rounds} rounds, so the map feeds itself and grows. A map may be a permutation (`Foo`->`Bar`, `Bar`->`Foo`) or a chain (`Foo`->`Bar`, `Bar`->`Baz`); it may not expand a name into text containing that same name"
+    )]
+    RenameMapDiverges { key: String, value: String, rounds: usize },
+
     #[error("match-count guard violated: found {found}, required at least {required}")]
     TooFewMatches { found: usize, required: usize },
 
@@ -99,6 +107,8 @@ pub enum ErrorKind {
     NonConvergentReplacement,
     NonConvergentContext,
     NonConvergentScript,
+    InvalidRenameMap,
+    RenameMapDiverges,
     TooFewMatches,
     TooManyMatches,
     ScriptParse,
@@ -127,6 +137,8 @@ impl Error {
             Error::NonConvergentReplacement { .. } => ErrorKind::NonConvergentReplacement,
             Error::NonConvergentContext { .. } => ErrorKind::NonConvergentContext,
             Error::NonConvergentScript { .. } => ErrorKind::NonConvergentScript,
+            Error::InvalidRenameMap { .. } => ErrorKind::InvalidRenameMap,
+            Error::RenameMapDiverges { .. } => ErrorKind::RenameMapDiverges,
             Error::TooFewMatches { .. } => ErrorKind::TooFewMatches,
             Error::TooManyMatches { .. } => ErrorKind::TooManyMatches,
             Error::ScriptParse(_) => ErrorKind::ScriptParse,

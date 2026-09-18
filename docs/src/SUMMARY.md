@@ -10,6 +10,7 @@
 # Modes
 
 - [Regex mode](./regex-mode.md)
+- [Rename mode (`--rename`)](./rename-mode.md)
 - [Script mode (`--script`)](./script-mode.md)
 - [Structural mode (`--lang` / `--query` / `--ast`)](./structural-mode.md)
 

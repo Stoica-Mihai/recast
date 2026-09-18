@@ -41,6 +41,7 @@ recast [OPTIONS] <PATTERN> <REPLACEMENT> [PATHS]...
 |-----------------------|-----------------------------------------------------|
 | `-L`, `--literal`     | Treat pattern + replacement as literal text         |
 | `-w`, `--word`        | Whole words only, same semantics as `rg --word-regexp`. Rejected with `--lang` |
+| `--rename OLD=NEW`    | Whole-word literal rename, repeatable, all in one pass. See [Rename mode](./rename-mode.md) |
 | `-i`, `--ignore-case` | Case-insensitive                                    |
 | `-s`, `--single-line` | Disable implicit `(?s)` — `.` no longer matches `\n` |
 

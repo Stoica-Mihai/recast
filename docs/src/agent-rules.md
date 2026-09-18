@@ -50,10 +50,14 @@ that refuses non-idempotent patterns (`a` → `aa`) before any write.
 2. About to make a **shape-sensitive** change (struct literal, enum
    variant, fn signature, AST node) → `recast_structural` with
    `ast_pattern` instead of regex.
-3. Preview returned 0 matches → **iterate the pattern**, do NOT fall
+3. Renaming **two or more names that touch each other** (`Foo`→`Bar`
+   and `Bar`→`Baz`, or a swap) → `recast_rename` with every entry in
+   ONE call. Two separate calls turn the original `Foo` and the
+   original `Bar` into the same `Baz`, and both calls exit 0.
+4. Preview returned 0 matches → **iterate the pattern**, do NOT fall
    back to per-file `Edit`.
-4. Preview looks right → `recast_apply` with identical args.
-5. A prior apply was killed mid-run → `recast_recover`.
+5. Preview looks right → `recast_apply` with identical args.
+6. A prior apply was killed mid-run → `recast_recover`.
 
 ### Concrete triggers
 
@@ -67,9 +71,12 @@ that refuses non-idempotent patterns (`a` → `aa`) before any write.
 
 - `recast_apply` — regex / literal / Rhai script. Works on any
   language; text-level.
+- `recast_rename` — N whole-word renames in one pass. Use whenever
+  the renames touch each other; that is the case it exists for.
 - `recast_structural` — tree-sitter `ast_pattern`. Use when the
   change is shape-sensitive. Supported langs: rust, ts, tsx, js,
   python, bash, go, json, markdown.
+- `recast_search` — match locations only, no rewriting.
 - `recast_recover` — only after a crash mid-apply.
 ````
 

@@ -9,6 +9,40 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ### Added
 
+- **`--rename OLD=NEW` (CLI) and the `recast_rename` MCP tool:
+  single-pass rename maps.** Repeatable; every rename lands in one
+  traversal and one atomic commit.
+
+  The hazard it closes is not repetition, it is silent information loss.
+  `Foo`→`Bar` followed by `Bar`→`Baz` as two invocations turns the
+  original `Foo` *and* the original `Bar` into `Baz`. Both runs exit 0
+  and every guard passes, because each rewrite is convergent on its own
+  and nothing in recast reasons across invocations. The two names are
+  then indistinguishable.
+
+  Keys match as whole words and are literal, not regexes — that is what
+  makes "does this replacement contain one of my keys" decidable, which
+  the validity check below depends on.
+
+  **Convergence is the wrong question for a map, so it asks a different
+  one.** Ordinary idempotency ("is the second run a no-op") rejects a
+  permutation, which is precisely the case this mode exists to allow.
+  Instead recast re-applies the map to its own replacements until the
+  text settles or repeats:
+
+  - Settles at once → no replacement reuses a key → re-runnable.
+  - Settles later, or revisits a string → a chain or a permutation.
+    Bounded, so correct exactly once. Accepted, and both the CLI and the
+    MCP response say so in words, because the plan JSON cannot show it.
+  - Never settles → the map feeds itself (`Foo`→`Foo Bar`). Refused with
+    `rename_map_diverges`.
+
+  Keys are sorted longest-first before compiling into one alternation:
+  the `regex` crate matches alternation leftmost-first, measured, so
+  `Foo=A` listed before `Foo-Bar=B` would otherwise rewrite `Foo-Bar`
+  into `A-Bar`. Two new error kinds: `invalid_rename_map` and
+  `rename_map_diverges`.
+
 - **`--word` / `-w` (CLI) and `word` (MCP): whole-word matching.** Wraps
   the pattern as `\b{start-half}(?:PATTERN)\b{end-half}` — the same
   semantics as `rg --word-regexp`. Applied *after* `--literal` escaping,

@@ -15,6 +15,7 @@ mod pattern;
 mod plan;
 #[cfg(test)]
 mod proptests;
+mod rename;
 mod rewrite;
 #[cfg(feature = "script")]
 mod script;
@@ -39,7 +40,10 @@ pub use parallel::build_pool;
 pub use pattern::{CompiledPattern, PatternOptions};
 #[cfg(feature = "script")]
 pub use plan::plan_rewrite_scripted;
-pub use plan::{FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, plan_rewrite};
+pub use plan::{
+    FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, plan_rename, plan_rewrite,
+};
+pub use rename::RenameMap;
 #[cfg(feature = "script")]
 pub use rewrite::rewrite_text_scripted;
 pub use rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};

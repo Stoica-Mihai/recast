@@ -45,6 +45,8 @@ crates/
     src/pattern.rs                 # regex compile + convergence probe
     src/rewrite.rs                 # per-file rewrite + unified diff + label_for_path
     src/plan.rs                    # walk → compile → rewrite → guard pipeline
+    src/rename.rs                  # single-pass whole-word rename maps (--rename)
+    src/lockfile.rs                # workspace lock: VCS-root keyed, out of tree
     src/commit.rs                  # 2-phase atomic commit + recovery sweep
     src/parallel.rs                # rayon thread-pool builder (--threads)
     src/json.rs                    # schema-locked JSON output (feature `serde`)

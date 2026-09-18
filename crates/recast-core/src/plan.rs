@@ -14,6 +14,7 @@ use tracing::{debug, trace};
 
 use crate::error::{Error, IoCtx, Result};
 use crate::pattern::{CompiledPattern, PatternOptions};
+use crate::rename::RenameMap;
 #[cfg(feature = "script")]
 use crate::rewrite::rewrite_text_scripted;
 use crate::rewrite::{RewriteOutcome, label_for_path, rewrite_text, unified_diff};
@@ -139,9 +140,8 @@ pub fn plan_rewrite<P: AsRef<Path>>(
                 &compiled,
                 path,
                 opts,
-                |p, s| Ok(rewrite_text(p, s)),
-                regex_convergence_check,
-                non_convergence,
+                |p: &CompiledPattern, s: &str| Ok(rewrite_text(p, s)),
+                Some((regex_convergence_check, non_convergence)),
             )
         })
         .collect();
@@ -205,12 +205,49 @@ pub fn plan_rewrite_scripted<P: AsRef<Path>>(
                     let outcome = rewrite_text_scripted(p, worker, s)?;
                     Ok(if outcome.after != s { outcome.matches } else { 0 })
                 };
-                process_one(&compiled, path, opts, rewrite, converge, NonConvergence::Script)
+                process_one(
+                    &compiled,
+                    path,
+                    opts,
+                    rewrite,
+                    Some((converge, NonConvergence::Script)),
+                )
             },
         )
         .collect();
     let changes = collect_changes(results)?;
     finalize_plan(changes, files_scanned, opts)
+}
+
+/// Apply a [`RenameMap`] in a single traversal.
+///
+/// Every rename lands in one pass, so dependent renames can't feed each
+/// other: `Foo -> Bar` and `Bar -> Baz` together leave the original
+/// `Foo` as `Bar` and the original `Bar` as `Baz`, where the same two
+/// rewrites run as separate invocations would collapse both to `Baz`.
+/// The map's stability is checked when it is built, so no per-file
+/// convergence probe runs here.
+pub fn plan_rename<P: AsRef<Path>>(
+    map: &RenameMap,
+    roots: &[P],
+    opts: &PlanOptions,
+) -> Result<Plan> {
+    let files = scan(roots, opts)?;
+    let files_scanned = files.len();
+
+    let results: Vec<Result<Option<FileChange>>> = files
+        .par_iter()
+        .map(|path| {
+            process_one(
+                map,
+                path,
+                opts,
+                |m: &RenameMap, s: &str| Ok(m.rewrite(s)),
+                None::<(fn(&RenameMap, &str) -> Result<usize>, NonConvergence)>,
+            )
+        })
+        .collect();
+    finalize_plan(collect_changes(results)?, files_scanned, opts)
 }
 
 fn scan<P: AsRef<Path>>(roots: &[P], opts: &PlanOptions) -> Result<Vec<PathBuf>> {
@@ -282,17 +319,21 @@ pub fn check_match_counts(
     Ok(())
 }
 
-fn process_one<R, C>(
-    pattern: &CompiledPattern,
+/// Per-file rewrite shared by the regex, scripted, and rename
+/// pipelines. `convergence` is `None` only where the rewrite's safety
+/// was established before the walk — a [`RenameMap`] validates its own
+/// stability at construction, and a per-file idempotency probe would
+/// reject exactly the swaps and chains that mode exists to allow.
+fn process_one<P, R, C>(
+    pattern: &P,
     path: &Path,
     opts: &PlanOptions,
     rewrite: R,
-    convergence_check: C,
-    non_convergence: NonConvergence,
+    convergence: Option<(C, NonConvergence)>,
 ) -> Result<Option<FileChange>>
 where
-    R: Fn(&CompiledPattern, &str) -> Result<RewriteOutcome>,
-    C: Fn(&CompiledPattern, &str) -> Result<usize>,
+    R: Fn(&P, &str) -> Result<RewriteOutcome>,
+    C: Fn(&P, &str) -> Result<usize>,
 {
     let (before, permissions) = match read_text_or_skip_binary(path, opts.max_bytes)? {
         Some(pair) => pair,
@@ -305,10 +346,12 @@ where
     }
     trace!(path = %path.display(), matches = outcome.matches, "file would change");
 
-    if !opts.allow_non_convergent {
-        let extra = convergence_check(pattern, &outcome.after)?;
+    if let Some((check, cause)) = convergence.as_ref()
+        && !opts.allow_non_convergent
+    {
+        let extra = check(pattern, &outcome.after)?;
         if extra > 0 {
-            return Err(non_convergence.error(path, extra));
+            return Err(cause.error(path, extra));
         }
     }
 

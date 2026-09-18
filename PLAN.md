@@ -205,6 +205,7 @@ Output:
 Misc:
   -L, --literal            Treat pattern and replacement as literal strings.
   -w, --word               Whole words only (as rg --word-regexp). Not with --lang.
+  --rename <OLD=NEW>       Whole-word literal rename; repeatable, applied in one pass.
   -i, --ignore-case        Case-insensitive matching.
   -s, --single-line        Disable implicit (?s) — make `.` not match \n.
   --threads <N>            Worker threads (default = num CPUs).
@@ -269,6 +270,8 @@ the count it owns.
          | "non_convergent_replacement"
          | "non_convergent_context"
          | "non_convergent_script"
+         | "invalid_rename_map"
+         | "rename_map_diverges"
          | "too_many_files"
          | "file_too_large"
          | "invalid_regex"

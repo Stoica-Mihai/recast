@@ -133,6 +133,20 @@ recast --apply --literal --word 'Outcome' 'ReadOutcome' src/
 usual fix when a prefix rename is rejected as non-convergent, because the
 replacement no longer re-matches the pattern.
 
+### Dependent renames
+
+```bash
+recast --apply --rename 'Foo=Bar' --rename 'Bar=Baz' src/
+```
+
+Run as two separate commands, `Foo`→`Bar` then `Bar`→`Baz` turns the
+original `Foo` *and* the original `Bar` into `Baz` — both runs exit 0 and
+every guard passes, because each is convergent on its own. `--rename`
+applies the whole map in one pass, so the two stay apart. Permutations
+(`Foo=Bar`, `Bar=Foo`) and chains are accepted and reported as correct
+exactly once; a map that feeds itself (`Foo=Foo Bar`) is refused. See
+[Rename mode](https://stoica-mihai.github.io/recast/rename-mode.html).
+
 ### Filters
 
 ```bash
@@ -339,6 +353,7 @@ Restart the client. Four tools become available:
 |---|---|
 | `recast_preview` | Dry-run a regex rewrite, return plan + diffs. |
 | `recast_apply`   | Atomically apply a regex rewrite to disk. |
+| `recast_rename`  | N whole-word renames in one pass, so dependent renames stay apart. |
 | `recast_structural` | Tree-sitter `--ast` rewrite (dry-run or apply). |
 | `recast_search`  | Find match locations (file/line/col/snippet/capture) without rewriting. |
 | `recast_recover` | Reconcile leftover `.recast.bak.*` / `.tmp.*` siblings. |

@@ -9,9 +9,9 @@ use clap::{ArgAction, Args, Parser};
 use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
-    ScriptRewriter, SearchOptions, SearchPlan, WalkOptions, WorkspaceLock,
+    RenameMap, ScriptRewriter, SearchOptions, SearchPlan, WalkOptions, WorkspaceLock,
     acquire_workspace_lock_for_paths, apply_changes, build_pool, check_match_counts, json,
-    plan_rewrite, plan_rewrite_scripted, plan_search, plan_structural_rewrite,
+    plan_rename, plan_rewrite, plan_rewrite_scripted, plan_search, plan_structural_rewrite,
     plan_structural_search, recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
 };
 
@@ -114,12 +114,12 @@ pub(crate) struct StructuralCli {
 pub(crate) struct Cli {
     /// Regex pattern. Multi-line by default. Use --literal for plain-string
     /// matching.
-    #[arg(required_unless_present_any = ["completions", "recover", "search"])]
+    #[arg(required_unless_present_any = ["completions", "recover", "search", "rename"])]
     pattern: Option<String>,
 
     /// Replacement template. $1, $2, ${name} interpolated unless --literal
     /// is set.
-    #[arg(required_unless_present_any = ["completions", "recover", "search"])]
+    #[arg(required_unless_present_any = ["completions", "recover", "search", "rename"])]
     replacement: Option<String>,
 
     /// Paths or globs to scan. Defaults to the current directory if omitted.
@@ -172,6 +172,19 @@ pub(crate) struct Cli {
     /// Treat pattern and replacement as literal strings.
     #[arg(short = 'L', long, action = ArgAction::SetTrue)]
     literal: bool,
+
+    /// Rename OLD to NEW. Repeatable. Every rename lands in a single
+    /// pass, so dependent renames can't feed each other the way two
+    /// separate invocations would. Names match as whole words and are
+    /// taken literally, not as regexes. PATTERN / REPLACEMENT are not
+    /// used in this mode.
+    #[arg(
+        long,
+        value_name = "OLD=NEW",
+        action = ArgAction::Append,
+        conflicts_with_all = ["script", "lang", "search", "literal", "word", "ignore_case", "single_line"]
+    )]
+    rename: Vec<String>,
 
     /// Match whole words only. Wraps the pattern as
     /// `\b{start-half}(?:PATTERN)\b{end-half}` — the same semantics as
@@ -287,6 +300,19 @@ impl Cli {
         self.paths.iter().map(PathBuf::from).collect()
     }
 
+    /// Split each `--rename OLD=NEW` on its first `=`, so a `=` may
+    /// appear in NEW.
+    fn rename_pairs(&self) -> Result<Vec<(String, String)>> {
+        self.rename
+            .iter()
+            .map(|spec| {
+                spec.split_once('=')
+                    .map(|(old, new)| (old.to_owned(), new.to_owned()))
+                    .ok_or_else(|| anyhow!("--rename expects OLD=NEW, got `{spec}`"))
+            })
+            .collect()
+    }
+
     /// `--search` with no replacement: clap binds positionals left-to-right
     /// so `pattern` gets the regex and `replacement` gets the first path.
     /// Fold `replacement` (and any further `paths`) back into a path list.
@@ -311,7 +337,12 @@ impl Cli {
     /// `Option`), so fold those back into the path list and drop the
     /// trailing `"."` default-value sentinel if it was tacked on after
     /// real positionals.
-    fn recover_paths(&self) -> Vec<PathBuf> {
+    /// Every positional argument treated as a path. Modes that take no
+    /// PATTERN / REPLACEMENT (`--recover`, `--rename`) still have those
+    /// two clap slots in front of `paths`, so a bare `recast --recover
+    /// src/` lands `src/` in `pattern`. Pull all three back together and
+    /// drop the trailing `.` default when it was not typed.
+    fn positional_paths(&self) -> Vec<PathBuf> {
         let mut paths: Vec<PathBuf> = Vec::new();
         if let Some(p) = self.pattern.as_deref() {
             paths.push(PathBuf::from(p));
@@ -366,7 +397,7 @@ fn run(cli: Cli) -> Result<u8> {
     };
 
     if cli.recover {
-        let paths = cli.recover_paths();
+        let paths = cli.positional_paths();
         let summary = recover_sweep(&paths).context("recover sweep")?;
         eprintln!(
             "recast: recovered {} backup(s), removed {} stale backup(s), removed {} temp(s)",
@@ -377,6 +408,10 @@ fn run(cli: Cli) -> Result<u8> {
 
     if cli.search {
         return run_search_mode(cli);
+    }
+
+    if !cli.rename.is_empty() {
+        return run_rename(&cli);
     }
 
     // Resolve structural --query / --ast before constructing the worker
@@ -668,12 +703,51 @@ fn handle_plan_error(err: CoreError, as_json: bool) -> Result<u8> {
     Ok(code)
 }
 
+fn run_rename(cli: &Cli) -> Result<u8> {
+    let map = match RenameMap::new(cli.rename_pairs()?) {
+        Ok(map) => map,
+        Err(err) => return handle_plan_error(err, cli.output.json),
+    };
+    if !map.rerunnable() && !cli.output.json && !cli.output.quiet {
+        eprintln!(
+            "recast: this map is correct exactly once — a replacement reuses a name the map \
+             also renames, so running it again would keep rewriting."
+        );
+    }
+
+    if cli.stdin {
+        let mut buf = String::new();
+        io::stdin().lock().read_to_string(&mut buf).context("read stdin")?;
+        let outcome = map.rewrite(&buf);
+        if let Err(err) = check_match_counts(outcome.matches, cli.min_matches(), cli.guard.at_most)
+        {
+            return handle_plan_error(err, cli.output.json);
+        }
+        io::stdout().lock().write_all(outcome.after.as_bytes()).context("write stdout")?;
+        return Ok(EXIT_OK);
+    }
+
+    let pool = build_pool(cli.threads).context("configure worker thread pool")?;
+    pool.install(|| {
+        let paths = cli.positional_paths();
+        let opts = cli.plan_options();
+        let plan = match plan_rename(&map, &paths, &opts) {
+            Ok(plan) => plan,
+            Err(err) => return handle_plan_error(err, cli.output.json),
+        };
+        dispatch_plan(cli, &plan)
+    })
+}
+
 fn acquire_workspace_lock_for(cli: &Cli) -> std::result::Result<Option<WorkspaceLock>, CoreError> {
     let writes_tree = cli.apply || cli.recover;
     if !writes_tree || cli.force || cli.stdin {
         return Ok(None);
     }
-    let raw_paths: Vec<PathBuf> =
-        if cli.recover { cli.recover_paths() } else { cli.paths_as_pathbufs() };
+    let raw_paths: Vec<PathBuf> = if cli.recover || !cli.rename.is_empty() {
+        cli.positional_paths()
+    } else {
+        cli.paths_as_pathbufs()
+    };
     acquire_workspace_lock_for_paths(&raw_paths).map(Some)
 }
