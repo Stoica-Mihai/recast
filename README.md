@@ -122,6 +122,17 @@ recast 'fn (\w+)_old\b' 'fn ${1}_new' src/
 `$1`, `${name}` interpolated; use `--literal` (`-L`) to disable
 interpolation.
 
+### Whole words
+
+```bash
+recast --apply --word 'foo' 'X' src/                 # skips `foobar`
+recast --apply --literal --word 'Outcome' 'ReadOutcome' src/
+```
+
+`--word` (`-w`) has the same semantics as `rg --word-regexp`. It is the
+usual fix when a prefix rename is rejected as non-convergent, because the
+replacement no longer re-matches the pattern.
+
 ### Filters
 
 ```bash

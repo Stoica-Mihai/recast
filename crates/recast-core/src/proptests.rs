@@ -25,8 +25,9 @@ proptest! {
         literal in any::<bool>(),
         ignore_case in any::<bool>(),
         single_line in any::<bool>(),
+        word in any::<bool>(),
     ) {
-        let opts = PatternOptions { literal, ignore_case, single_line };
+        let opts = PatternOptions { literal, ignore_case, single_line, word };
         let _ = CompiledPattern::compile(&pattern, &replacement, &opts);
     }
 

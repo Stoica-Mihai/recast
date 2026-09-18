@@ -204,6 +204,7 @@ Output:
 
 Misc:
   -L, --literal            Treat pattern and replacement as literal strings.
+  -w, --word               Whole words only (as rg --word-regexp). Not with --lang.
   -i, --ignore-case        Case-insensitive matching.
   -s, --single-line        Disable implicit (?s) — make `.` not match \n.
   --threads <N>            Worker threads (default = num CPUs).

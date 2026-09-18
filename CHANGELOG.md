@@ -7,6 +7,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Added
+
+- **`--word` / `-w` (CLI) and `word` (MCP): whole-word matching.** Wraps
+  the pattern as `\b{start-half}(?:PATTERN)\b{end-half}` — the same
+  semantics as `rg --word-regexp`. Applied *after* `--literal` escaping,
+  so the two combine; `--word --literal 'Outcome' 'ReadOutcome'` is the
+  short fix for a rewrite rejected as `non_convergent_replacement`.
+  Available in rewrite, `--search`, `--stdin`, and script mode; rejected
+  with `--lang`, which does not use the regex pipeline. The
+  `non_convergent_replacement` message now names `--word` directly,
+  rather than advising "word boundaries" with no flag behind it.
+
+  Half boundaries, not plain `\b`, on purpose. `\b` needs a word
+  character on the *outside* as well, which makes any pattern whose own
+  edges are punctuation — `-foo-`, `\.unwrap\(\)` — impossible to match
+  rather than merely strict. Measured against ripgrep 15.2.0: over
+  `x -foo- y`, `rg -w -e '-foo-'` matches and `rg -e '\b(?:-foo-)\b'`
+  does not. `regex` 1.12.3 supports the `\b{start-half}` syntax.
+
 ### Fixed
 
 - **The match-count guard now fires on zero matches.** A pattern that

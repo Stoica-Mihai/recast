@@ -241,7 +241,7 @@ impl RecastServer {
                        \n\
                        Two modes:\n\
                        - **Regex:** supply `pattern`. All regex features apply (literal, \
-                       ignore_case, single_line, globs, types).\n\
+                       word, ignore_case, single_line, globs, types).\n\
                        - **Structural:** supply `lang` + `ast_pattern` (or `query`). Capture \
                        names (e.g. `@root`, `@name`) surface in the `capture` field so callers \
                        can distinguish definitions from usages.\n\
@@ -375,6 +375,11 @@ pub struct RewriteArgs {
     /// Treat pattern and replacement as literal strings (no regex metas).
     #[serde(default)]
     pub literal: bool,
+    /// Match whole words only, as `rg --word-regexp` does. Wraps the
+    /// pattern in half word boundaries, so a pattern whose own edges
+    /// aren't word characters stays matchable.
+    #[serde(default)]
+    pub word: bool,
     /// Case-insensitive matching.
     #[serde(default)]
     pub ignore_case: bool,
@@ -505,6 +510,9 @@ pub struct SearchArgs {
     pub paths: Vec<String>,
     #[serde(default)]
     pub literal: bool,
+    /// Match whole words only, as `rg --word-regexp` does.
+    #[serde(default)]
+    pub word: bool,
     #[serde(default)]
     pub ignore_case: bool,
     #[serde(default)]
@@ -538,6 +546,7 @@ impl SearchArgs {
                 literal: self.literal,
                 ignore_case: self.ignore_case,
                 single_line: self.single_line,
+                word: self.word,
             },
             walk_options: walk_options_from(
                 self.hidden,
@@ -607,6 +616,7 @@ impl RewriteArgs {
                 literal: self.literal,
                 ignore_case: self.ignore_case,
                 single_line: self.single_line,
+                word: self.word,
             },
             walk_options: walk_options_from(
                 self.hidden,

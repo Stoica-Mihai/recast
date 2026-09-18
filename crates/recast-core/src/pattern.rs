@@ -18,11 +18,19 @@ use crate::error::Result;
 /// - `single_line` — disable the implicit `(?s)`. With it off (the
 ///   default), `.` matches `\n`, which is what most LLM-driven rewrites
 ///   expect.
+/// - `word` — match only whole words, wrapping the pattern as
+///   `\b{start-half}(?:PATTERN)\b{end-half}`. These are *half*
+///   boundaries: unlike `\b` they require only a non-word character (or
+///   the haystack edge) on their own side, so a pattern whose own edges
+///   are non-word — `\.unwrap\(\)`, `-foo-` — stays matchable instead of
+///   becoming impossible. This is what `rg --word-regexp` does; plain
+///   `\b(?:…)\b` is not the same thing and was measured to differ.
 #[derive(Debug, Clone, Default)]
 pub struct PatternOptions {
     pub literal: bool,
     pub ignore_case: bool,
     pub single_line: bool,
+    pub word: bool,
 }
 
 /// A compiled regex paired with its replacement template. Construct with
@@ -39,7 +47,12 @@ impl CompiledPattern {
     /// Compile `pattern` into a regex and store `replacement` for later
     /// substitution. Returns [`crate::Error::InvalidRegex`] on syntax errors.
     pub fn compile(pattern: &str, replacement: &str, opts: &PatternOptions) -> Result<Self> {
-        let source = if opts.literal { regex::escape(pattern) } else { pattern.to_owned() };
+        let escaped = if opts.literal { regex::escape(pattern) } else { pattern.to_owned() };
+        let source = if opts.word {
+            format!(r"\b{{start-half}}(?:{escaped})\b{{end-half}}")
+        } else {
+            escaped
+        };
         let regex = RegexBuilder::new(&source)
             .case_insensitive(opts.ignore_case)
             .dot_matches_new_line(!opts.single_line)

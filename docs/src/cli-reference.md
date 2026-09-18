@@ -40,6 +40,7 @@ recast [OPTIONS] <PATTERN> <REPLACEMENT> [PATHS]...
 | Flag                  | Effect                                              |
 |-----------------------|-----------------------------------------------------|
 | `-L`, `--literal`     | Treat pattern + replacement as literal text         |
+| `-w`, `--word`        | Whole words only, same semantics as `rg --word-regexp`. Rejected with `--lang` |
 | `-i`, `--ignore-case` | Case-insensitive                                    |
 | `-s`, `--single-line` | Disable implicit `(?s)` — `.` no longer matches `\n` |
 

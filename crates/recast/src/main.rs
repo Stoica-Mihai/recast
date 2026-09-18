@@ -173,6 +173,13 @@ pub(crate) struct Cli {
     #[arg(short = 'L', long, action = ArgAction::SetTrue)]
     literal: bool,
 
+    /// Match whole words only. Wraps the pattern as
+    /// `\b{start-half}(?:PATTERN)\b{end-half}` — the same semantics as
+    /// `rg --word-regexp`, so a pattern whose own edges are not word
+    /// characters stays matchable. Not available in structural mode.
+    #[arg(short = 'w', long, action = ArgAction::SetTrue, conflicts_with = "lang")]
+    word: bool,
+
     /// Case-insensitive matching.
     #[arg(short = 'i', long, action = ArgAction::SetTrue)]
     ignore_case: bool,
@@ -230,6 +237,7 @@ impl Cli {
             literal: self.literal,
             ignore_case: self.ignore_case,
             single_line: self.single_line,
+            word: self.word,
         }
     }
 

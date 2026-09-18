@@ -29,7 +29,7 @@ pub enum Error {
     TooManyFiles { count: usize, limit: usize },
 
     #[error(
-        "pattern is non-convergent: the replacement itself still matches the pattern, so re-applying the rewrite to {path} would produce {extra} more match(es); narrow the pattern (e.g. word boundaries) or pass --allow-non-convergent to override"
+        "pattern is non-convergent: the replacement itself still matches the pattern, so re-applying the rewrite to {path} would produce {extra} more match(es); try --word, narrow the pattern by hand, or pass --allow-non-convergent to override"
     )]
     NonConvergentReplacement { path: PathBuf, extra: usize },
 

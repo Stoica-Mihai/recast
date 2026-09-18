@@ -335,6 +335,99 @@ fn structural_mode_stdin_uses_capture_template() {
 }
 
 #[test]
+fn word_flag_rewrites_only_whole_words() {
+    let dir = fixture(&[("a.txt", "foo foobar barfoo foo\n")]);
+    recast().arg("--apply").arg("--word").arg("foo").arg("X").arg(dir.path()).assert().success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "X foobar barfoo X\n");
+}
+
+#[test]
+fn word_flag_short_form_is_dash_w() {
+    let dir = fixture(&[("a.txt", "foo foobar\n")]);
+    recast().arg("--apply").arg("-w").arg("foo").arg("X").arg(dir.path()).assert().success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "X foobar\n");
+}
+
+#[test]
+fn word_flag_turns_a_non_convergent_prefix_rename_into_a_clean_one() {
+    let dir = fixture(&[("a.txt", "fn f(x: Outcome) -> ReadOutcome {}\n")]);
+    recast().arg("--literal").arg("Outcome").arg("ReadOutcome").arg(dir.path()).assert().code(3);
+
+    recast()
+        .arg("--apply")
+        .arg("--literal")
+        .arg("--word")
+        .arg("Outcome")
+        .arg("ReadOutcome")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "fn f(x: ReadOutcome) -> ReadOutcome {}\n"
+    );
+}
+
+#[test]
+fn word_flag_matches_a_pattern_whose_edges_are_not_word_characters() {
+    let dir = fixture(&[("a.txt", "x -foo- y\n")]);
+    recast()
+        .arg("--apply")
+        .arg("--literal")
+        .arg("--word")
+        .arg("--")
+        .arg("-foo-")
+        .arg("Z")
+        .arg(dir.path())
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "x Z y\n");
+}
+
+#[test]
+fn word_flag_is_rejected_in_structural_mode() {
+    let dir = fixture(&[("lib.rs", "fn old_fn() {}\n")]);
+    recast()
+        .arg("--word")
+        .arg("--lang")
+        .arg("rust")
+        .arg("--ast")
+        .arg("fn old_fn() {}")
+        .arg("ignored")
+        .arg("fn new_fn() {}")
+        .arg(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn search_honors_word_flag() {
+    let dir = fixture(&[("a.txt", "foo foobar barfoo foo\n")]);
+    recast()
+        .arg("--search")
+        .arg("--word")
+        .arg("foo")
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 matches in 1 file"));
+}
+
+#[test]
+fn stdin_honors_word_flag() {
+    recast()
+        .arg("--stdin")
+        .arg("--word")
+        .arg("foo")
+        .arg("X")
+        .write_stdin("foo foobar\n")
+        .assert()
+        .success()
+        .stdout("X foobar\n");
+}
+
+#[test]
 fn non_convergent_replacement_blames_the_replacement_and_names_the_override() {
     let dir = fixture(&[("a.txt", "let x = Outcome;\n")]);
     recast()

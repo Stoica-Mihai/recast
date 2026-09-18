@@ -18,6 +18,39 @@ recast 'fn (\w+)_old\b' 'fn ${1}_new' src/
 `$1`, `${name}` interpolated. To treat the pattern and replacement as
 literal text, pass `--literal` (`-L`).
 
+## Whole words
+
+`--word` (`-w`) matches only whole words:
+
+```bash
+recast --apply --word 'foo' 'X' src/   # rewrites `foo`, leaves `foobar` alone
+```
+
+It wraps the pattern as `\b{start-half}(?:PATTERN)\b{end-half}`, the same
+semantics as `rg --word-regexp`. Those are *half* boundaries: each one
+needs only a non-word character (or the edge of the file) on its own
+side. Plain `\b(?:PATTERN)\b` is **not** the same thing — it needs a word
+character on the outside too, which makes a pattern whose own edges are
+punctuation impossible to match:
+
+```bash
+printf 'x -foo- y\n' > t.txt
+recast --search --literal --word -- '-foo-' t.txt   # 1 match
+recast --search --at-least 0 '\b(?:-foo-)\b' t.txt  # 0 matches
+```
+
+`--word` is applied *after* `--literal` escaping, so the two combine.
+That combination is the usual fix for a rewrite rejected as
+`non_convergent_replacement`:
+
+```bash
+recast --literal 'Outcome' 'ReadOutcome' src/           # non_convergent_replacement
+recast --literal --word 'Outcome' 'ReadOutcome' src/    # fine — `ReadOutcome` no longer re-matches
+```
+
+`--word` is rejected with `--lang`; structural mode does not go through
+the regex pipeline. It does apply to `--search` and `--stdin`.
+
 ## Case-insensitive
 
 ```bash
@@ -46,7 +79,7 @@ different fixes, so they get different error kinds:
 
 | Kind | Cause | Fix |
 |---|---|---|
-| `non_convergent_replacement` | The replacement still matches the pattern. `'Outcome' -> 'ReadOutcome'` | Narrow the pattern — word boundaries usually do it |
+| `non_convergent_replacement` | The replacement still matches the pattern. `'Outcome' -> 'ReadOutcome'` | Add `--word`, or narrow the pattern by hand |
 | `non_convergent_context` | The replacement is clean; the rewrite pulls surrounding text into a new match. `'ab' -> 'a'` over `aabb` | Word boundaries won't help. The pattern overlaps itself; rewrite it |
 
 A third kind, `non_convergent_script`, covers `--script` runs. The
