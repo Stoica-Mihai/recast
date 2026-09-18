@@ -4,6 +4,7 @@ use std::path::Path;
 
 use super::*;
 use crate::error::Error;
+use crate::plan::PlanOutcome;
 
 #[test]
 fn rename_identifier_via_query() {
@@ -227,6 +228,40 @@ fn plan_structural_rejects_template_breakage() {
     )
     .unwrap_err();
     assert!(matches!(err, Error::SyntaxRegression { .. }), "{err:?}");
+}
+
+#[test]
+fn plan_structural_zero_matches_violates_default_guard() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.rs"), "struct Foo {}\n").unwrap();
+    let err = plan_structural_rewrite(
+        Language::Rust,
+        "(function_item) @root",
+        "fn replaced() {}",
+        &[dir.path()],
+        &PlanOptions::default(),
+        false,
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::TooFewMatches { found: 0, required: 1 }), "{err:?}");
+}
+
+#[test]
+fn plan_structural_zero_matches_allowed_with_at_least_zero() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.rs"), "struct Foo {}\n").unwrap();
+    let opts = PlanOptions { at_least: Some(0), ..Default::default() };
+    let plan = plan_structural_rewrite(
+        Language::Rust,
+        "(function_item) @root",
+        "fn replaced() {}",
+        &[dir.path()],
+        &opts,
+        false,
+    )
+    .unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::AlreadyApplied);
+    assert_eq!(plan.total_matches, 0);
 }
 
 #[test]

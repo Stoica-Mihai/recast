@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use recast_core::{PlanOptions, PlanOutcome, apply_changes, plan_rewrite};
+use recast_core::{Error, PlanOptions, PlanOutcome, apply_changes, plan_rewrite};
 use tempfile::TempDir;
 
 fn fixture(files: &[(&str, &str)]) -> TempDir {
@@ -41,8 +41,13 @@ fn end_to_end_rename_across_nested_tree() {
     let readme = fs::read_to_string(dir.path().join("README.md")).unwrap();
     assert_eq!(readme, "# NewName project\n");
 
-    let replay =
-        plan_rewrite(r"\bOldName\b", "NewName", &[dir.path()], &PlanOptions::default()).unwrap();
+    let replay_err =
+        plan_rewrite(r"\bOldName\b", "NewName", &[dir.path()], &PlanOptions::default())
+            .unwrap_err();
+    assert!(matches!(replay_err, Error::TooFewMatches { found: 0, required: 1 }), "{replay_err:?}");
+
+    let opts = PlanOptions { at_least: Some(0), ..Default::default() };
+    let replay = plan_rewrite(r"\bOldName\b", "NewName", &[dir.path()], &opts).unwrap();
     assert_eq!(replay.outcome, PlanOutcome::AlreadyApplied);
 }
 

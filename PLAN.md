@@ -88,13 +88,16 @@ the last two columns plus first-class atomicity.
    - Default: `--at-least 1`. Silent zero-match is impossible by default;
      an agent must explicitly pass `--at-least 0` to allow no-op runs.
 5. **Idempotency check.**
-   - Before applying, `recast` checks whether running the rewrite again
-     would change anything. If the post-image already matches the
-     pre-image *because the pattern would not match the replacement*, the
-     run is treated as already-applied; `recast` reports
-     "already applied" and exits 0 without writing.
-   - This catches the "re-run produces silent duplicate edits" failure
-     mode common to LLM agents that retry on partial output.
+   - Before applying, `recast` re-applies the rewrite to its own
+     post-image. If any file would change again, the run aborts as
+     non-convergent. This catches the "re-run produces silent duplicate
+     edits" failure mode common to LLM agents that retry on partial
+     output.
+   - A re-run with nothing left to match is a *zero-match* run, so the
+     guard in (4) decides the outcome — not convergence. `--at-least 0`
+     reports "already applied" and exits 0; the default `--at-least 1`
+     exits 2. Convergence is a property of the pattern; "already applied"
+     is a property of the tree, and only the caller knows which it wants.
 6. **Globbing + ignore rules.**
    - Path arguments are globbed via `globwalk` or `ignore` crate.
    - `.gitignore` / `.ignore` / `.rgignore` respected by default;

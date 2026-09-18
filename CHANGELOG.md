@@ -7,6 +7,34 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Fixed
+
+- **The match-count guard now fires on zero matches.** A pattern that
+  matched nothing was reported as `already_applied` with exit 0, so a
+  mistyped pattern looked like a successful no-op — the exact silent
+  failure `--at-least` exists to prevent. `--at-least N` was ignored
+  entirely on that path: `--at-least 2` against zero matches still exited
+  0. The guard now runs *before* the zero-match classification, in the
+  regex, scripted, and structural pipelines alike. Structural mode was
+  worse: its zero-match return had no convergence condition at all, so it
+  swallowed every zero-match run unconditionally.
+
+  Root cause: the planner used pattern *convergence* to decide whether a
+  zero-match run was a legitimate no-op. Convergence describes the
+  pattern; "already applied" describes the tree. Nearly every well-formed
+  pattern is convergent, so the test passed for everything except the
+  pathological `a` → `aa` shape.
+
+### Changed
+
+- **Breaking: a zero-match run now exits 2 unless you opt in.** Pass
+  `--at-least 0` (CLI) / `at_least: 0` (MCP) to get the previous
+  `already_applied` + exit 0 behavior. This affects re-running a finished
+  rewrite from a retry loop, and `--check` against an already-converted
+  tree — both now need `--at-least 0`. `--at-least 0` was documented in
+  `PlanOptions` and `docs/src/safety.md` but had no effect before this
+  change, because the early return swallowed it in both directions.
+
 ## [0.1.15] — 2026-05-31
 
 ### Added

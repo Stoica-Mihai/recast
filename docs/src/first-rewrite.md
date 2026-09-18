@@ -39,16 +39,25 @@ Under the hood: every file is staged in a sibling `.recast.tmp.N`
 step reverse-renames every committed file from its backup, leaving the
 tree bit-identical to the pre-image. See [Safety guarantees](./safety.md).
 
-## 3. Re-run is safe
+## 3. Re-run
 
 ```bash
 recast --apply 'OldName' 'NewName' src/
-# recast: already applied; no changes needed.
+# recast: match-count guard violated: found 0, required at least 1
+# exit 2
 ```
 
-`recast` checks convergence (re-applying the pattern to its own output
-produces no further change) and reports "already applied" with exit 0,
-so retrying a rewrite in CI or from an LLM-agent retry loop is safe.
+The second run finds nothing to match, and by default that is a guard
+violation — the same answer you get for a mistyped pattern, because the
+two are indistinguishable from the outside.
+
+For a retry loop in CI or from an LLM agent, say so explicitly:
+
+```bash
+recast --apply --at-least 0 'OldName' 'NewName' src/
+# recast: already applied; no changes needed.
+# exit 0
+```
 
 If the pattern is non-convergent (e.g. `'a' -> 'aa'`), `recast` refuses
 with a `non_convergent` error before touching any file.

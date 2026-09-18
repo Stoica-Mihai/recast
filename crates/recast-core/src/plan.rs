@@ -90,10 +90,10 @@ pub struct FileChange {
 /// Top-level result classification for a [`Plan`].
 ///
 /// `Changes` — at least one file would be rewritten.
-/// `AlreadyApplied` — zero matches across the whole scan *and* the
-/// pattern is convergent (re-applying it to its own replacement would
-/// produce no further change), so the run is treated as a successful
-/// no-op rather than a guard violation.
+/// `AlreadyApplied` — zero matches across the whole scan, on a run whose
+/// `at_least` guard permits zero. Reaching this variant means the caller
+/// explicitly asked for a no-op to be acceptable; a zero-match run under
+/// the default `at_least = Some(1)` is [`Error::TooFewMatches`] instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
@@ -140,7 +140,7 @@ pub fn plan_rewrite<P: AsRef<Path>>(
         })
         .collect();
     let changes = collect_changes(results)?;
-    finalize_plan(changes, compiled.is_convergent(), files_scanned, opts)
+    finalize_plan(changes, files_scanned, opts)
 }
 
 fn regex_convergence_check(pattern: &CompiledPattern, after: &str) -> Result<usize> {
@@ -181,10 +181,7 @@ pub fn plan_rewrite_scripted<P: AsRef<Path>>(
         )
         .collect();
     let changes = collect_changes(results)?;
-    // Scripts can't be probed statically; trust the per-file dynamic
-    // convergence check inside process_one and treat zero matches as
-    // an already-applied no-op.
-    finalize_plan(changes, true, files_scanned, opts)
+    finalize_plan(changes, files_scanned, opts)
 }
 
 fn scan<P: AsRef<Path>>(roots: &[P], opts: &PlanOptions) -> Result<Vec<PathBuf>> {
@@ -206,17 +203,23 @@ fn collect_changes(results: Vec<Result<Option<FileChange>>>) -> Result<Vec<FileC
     Ok(changes)
 }
 
-fn finalize_plan(
+/// Fold per-file results into a [`Plan`]. The match-count guard runs
+/// before the zero-match classification, so a pattern that matched
+/// nothing is a [`Error::TooFewMatches`] violation unless the caller
+/// opted in with `at_least = Some(0)` or disabled the guard with `None`.
+/// Shared by the regex, scripted, and structural pipelines.
+pub(crate) fn finalize_plan(
     changes: Vec<FileChange>,
-    convergent_or_scripted: bool,
     files_scanned: usize,
     opts: &PlanOptions,
 ) -> Result<Plan> {
     let total_matches: usize = changes.iter().map(|c| c.matches).sum();
     debug!(files_changed = changes.len(), total_matches, "rewrite plan ready");
 
-    if total_matches == 0 && convergent_or_scripted {
-        debug!("already applied (zero matches)");
+    check_match_counts(total_matches, opts.at_least, opts.at_most)?;
+
+    if total_matches == 0 {
+        debug!("already applied (zero matches, permitted by the guard)");
         return Ok(Plan {
             changes: Vec::new(),
             total_matches: 0,
@@ -224,8 +227,6 @@ fn finalize_plan(
             outcome: PlanOutcome::AlreadyApplied,
         });
     }
-
-    check_match_counts(total_matches, opts.at_least, opts.at_most)?;
 
     Ok(Plan { changes, total_matches, files_scanned, outcome: PlanOutcome::Changes })
 }

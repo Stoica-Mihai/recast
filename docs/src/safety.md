@@ -25,8 +25,12 @@ Examples that get rejected:
 - `'a' -> 'aa'` (grows on every run)
 - `'foo' -> 'foofoo'`
 
-A successful first run followed by a re-run reports `already_applied`
-and exits 0, so retry loops are safe.
+A successful first run followed by a re-run has nothing left to match,
+so it is the guard in section 1 that decides the outcome, not
+convergence. Re-run with `--at-least 0` to get `already_applied` and
+exit 0; the default `--at-least 1` exits 2, because from the planner's
+side an already-converted tree and a mistyped pattern are the same
+observation.
 
 ## 3. Syntax-regression guard
 

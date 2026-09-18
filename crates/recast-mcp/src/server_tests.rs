@@ -100,17 +100,24 @@ async fn apply_writes_changes_to_disk() {
 }
 
 #[tokio::test]
-async fn preview_returns_already_applied_for_zero_matches() {
-    // Zero matches + convergent rewrite is intentionally a success
-    // outcome (the run is a no-op against an already-converted tree),
-    // not a guard violation. The TooFewMatches guard only fires when
-    // the planner can't classify the run as already-applied.
+async fn preview_zero_matches_is_a_guard_violation() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("a.txt"), "no match here\n").unwrap();
-    let out = server()
+    let err = server()
         .recast_preview(Parameters(rewrite_args("nonexistent", "x", dir.path())))
         .await
-        .unwrap();
+        .unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+    assert_eq!(data["kind"], "too_few_matches", "wrong kind: {data}");
+}
+
+#[tokio::test]
+async fn preview_returns_already_applied_when_at_least_zero() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "no match here\n").unwrap();
+    let mut args = rewrite_args("nonexistent", "x", dir.path());
+    args.at_least = Some(0);
+    let out = server().recast_preview(Parameters(args)).await.unwrap();
     let body = extract_text(out);
     assert!(body.contains("\"outcome\":\"already_applied\""), "expected already_applied: {body}");
 }

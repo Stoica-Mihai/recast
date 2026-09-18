@@ -12,7 +12,7 @@ use tree_sitter::{Language as TsLanguage, Node, Parser, Query, QueryCursor, Stre
 
 use crate::error::{Error, Result};
 use crate::plan::{
-    FileChange, Plan, PlanOptions, PlanOutcome, check_match_counts, read_text_or_skip_binary,
+    FileChange, Plan, PlanOptions, check_match_counts, finalize_plan, read_text_or_skip_binary,
 };
 use crate::rewrite::{label_for_path, unified_diff};
 use crate::search::{
@@ -579,17 +579,7 @@ pub fn plan_structural_rewrite<P: AsRef<Path>>(
         }
     }
 
-    let total_matches: usize = changes.iter().map(|c| c.matches).sum();
-    if total_matches == 0 {
-        return Ok(Plan {
-            changes: Vec::new(),
-            total_matches: 0,
-            files_scanned,
-            outcome: PlanOutcome::AlreadyApplied,
-        });
-    }
-    check_match_counts(total_matches, opts.at_least, opts.at_most)?;
-    Ok(Plan { changes, total_matches, files_scanned, outcome: PlanOutcome::Changes })
+    finalize_plan(changes, files_scanned, opts)
 }
 
 fn plan_one(

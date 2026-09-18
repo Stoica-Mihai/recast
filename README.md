@@ -13,9 +13,11 @@ humans for mechanical refactors.
 `recast` differs from `sed` / `sd` / a Python heredoc in six places:
 
 1. **Match-required guard.** Default `--at-least 1` exits non-zero when
-   nothing matches. Silent no-match is impossible by default.
-2. **Idempotency check.** Refuses non-convergent rewrites; reports
-   "already applied" on the second run.
+   nothing matches. Silent no-match is impossible by default — pass
+   `--at-least 0` to allow a no-op run, such as re-running a finished
+   rewrite from a retry loop.
+2. **Idempotency check.** Refuses non-convergent rewrites — a pattern
+   like `a` → `aa` that grows the file on every run.
 3. **Syntax-regression guard.** For files with a tree-sitter grammar,
    refuses a rewrite whose output introduces new parse errors (a greedy
    regex stranding a brace). Syntactic only; override with

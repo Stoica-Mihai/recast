@@ -28,10 +28,52 @@ fn plan_collects_changes_across_files() {
 }
 
 #[test]
-fn plan_already_applied_when_no_matches_and_convergent() {
+fn plan_zero_matches_violates_default_guard() {
+    let dir = fixture(&[("a.txt", "unrelated\n")]);
+    let err = plan_rewrite("Zzz", "Q", &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(matches!(err, Error::TooFewMatches { found: 0, required: 1 }), "{err:?}");
+}
+
+#[test]
+fn plan_rerun_on_converted_tree_violates_default_guard() {
     let dir = fixture(&[("a.txt", "New name\n")]);
-    let plan = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap();
+    let err = plan_rewrite("Old", "New", &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(matches!(err, Error::TooFewMatches { found: 0, required: 1 }), "{err:?}");
+}
+
+#[test]
+fn plan_zero_matches_honors_explicit_at_least() {
+    let dir = fixture(&[("a.txt", "unrelated\n")]);
+    let opts = PlanOptions { at_least: Some(2), ..Default::default() };
+    let err = plan_rewrite("Zzz", "Q", &[dir.path()], &opts).unwrap_err();
+    assert!(matches!(err, Error::TooFewMatches { found: 0, required: 2 }), "{err:?}");
+}
+
+#[test]
+fn plan_zero_matches_allowed_when_guard_disabled() {
+    let dir = fixture(&[("a.txt", "unrelated\n")]);
+    let opts = PlanOptions { at_least: None, ..Default::default() };
+    let plan = plan_rewrite("Zzz", "Q", &[dir.path()], &opts).unwrap();
     assert_eq!(plan.outcome, PlanOutcome::AlreadyApplied);
+}
+
+#[test]
+fn plan_zero_matches_is_already_applied_for_non_convergent_pattern() {
+    let dir = fixture(&[("a.txt", "unrelated\n")]);
+    let opts = PlanOptions { at_least: Some(0), ..Default::default() };
+    let plan = plan_rewrite("Zzz", "ZzzZzz", &[dir.path()], &opts).unwrap();
+    assert_eq!(plan.outcome, PlanOutcome::AlreadyApplied);
+    assert_eq!(plan.total_matches, 0);
+}
+
+#[cfg(feature = "script")]
+#[test]
+fn scripted_plan_zero_matches_violates_default_guard() {
+    let dir = fixture(&[("a.txt", "unrelated\n")]);
+    let script = crate::script::ScriptRewriter::from_source(r#""Q""#).unwrap();
+    let err =
+        plan_rewrite_scripted("Zzz", &script, &[dir.path()], &PlanOptions::default()).unwrap_err();
+    assert!(matches!(err, Error::TooFewMatches { found: 0, required: 1 }), "{err:?}");
 }
 
 #[test]

@@ -17,7 +17,7 @@ Alpha (v0.1.15). Every phase of `PLAN.md` (0–6) has landed; pre-built binaries
 Multi-file regex rewrites that defeat the two silent failure modes that bite LLM agents using `python` heredocs:
 
 - **Silent no-match.** Default `--at-least 1` guard fails non-zero if zero matches.
-- **Non-idempotent re-runs.** Built-in convergence check refuses non-convergent rewrites; reports "already applied" on second run.
+- **Non-idempotent re-runs.** Built-in convergence check refuses non-convergent rewrites. A re-run with nothing left to match is a zero-match run, so it hits the guard above; pass `--at-least 0` to get "already applied" and exit 0 instead.
 
 Plus first-class atomicity (two-phase commit with rollback + a crash-recovery sweep), unified-diff preview by default, agent-friendly JSON output, and ergonomics close to `sd`. Beyond regex there are two opt-in modes: a Rhai script callback (`--script`) and tree-sitter structural matching (`--lang` + `--query`/`--ast`).
 

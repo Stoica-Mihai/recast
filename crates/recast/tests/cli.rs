@@ -57,7 +57,99 @@ fn check_mode_exit_one_when_changes_pending() {
 #[test]
 fn check_mode_exit_zero_when_already_applied() {
     let dir = fixture(&[("a.txt", "New\n")]);
-    recast().arg("--check").arg("Old").arg("New").arg(dir.path()).assert().code(0);
+    recast()
+        .arg("--check")
+        .arg("--at-least")
+        .arg("0")
+        .arg("Old")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(0);
+}
+
+#[test]
+fn check_mode_zero_matches_exits_two_by_default() {
+    let dir = fixture(&[("a.txt", "New\n")]);
+    recast()
+        .arg("--check")
+        .arg("Old")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("match-count guard violated"));
+}
+
+#[test]
+fn zero_match_typo_pattern_exits_two() {
+    let dir = fixture(&[("a.txt", "Old\n")]);
+    recast()
+        .arg("ZZZ_TYPO_NEVER_PRESENT")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("match-count guard violated"));
+}
+
+#[test]
+fn zero_match_typo_pattern_honors_explicit_at_least() {
+    let dir = fixture(&[("a.txt", "Old\n")]);
+    recast()
+        .arg("--at-least")
+        .arg("2")
+        .arg("ZZZ_TYPO_NEVER_PRESENT")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("found 0, required at least 2"));
+}
+
+#[test]
+fn zero_match_json_reports_too_few_matches() {
+    let dir = fixture(&[("a.txt", "Old\n")]);
+    recast()
+        .arg("--json")
+        .arg("ZZZ_TYPO_NEVER_PRESENT")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stdout(
+            predicate::str::contains(r#""kind":"error""#)
+                .and(predicate::str::contains(r#""error":"too_few_matches""#)),
+        );
+}
+
+#[test]
+fn zero_match_apply_exits_two_and_leaves_tree_untouched() {
+    let dir = fixture(&[("a.txt", "Old\n")]);
+    recast()
+        .arg("--apply")
+        .arg("ZZZ_TYPO_NEVER_PRESENT")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(2);
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "Old\n");
+}
+
+#[test]
+fn structural_zero_match_exits_two() {
+    let dir = fixture(&[("lib.rs", "struct Foo {}\n")]);
+    recast()
+        .arg("--lang")
+        .arg("rust")
+        .arg("--ast")
+        .arg("fn never_present() {}")
+        .arg("ignored")
+        .arg("fn replaced() {}")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("match-count guard violated"));
 }
 
 #[test]
@@ -107,7 +199,22 @@ fn json_error_exits_two_with_machine_readable_kind() {
 }
 
 #[test]
-fn already_applied_message_on_rerun() {
+fn already_applied_message_on_rerun_with_at_least_zero() {
+    let dir = fixture(&[("a.txt", "Old\n")]);
+    recast().arg("--apply").arg("Old").arg("New").arg(dir.path()).assert().success();
+    recast()
+        .arg("--at-least")
+        .arg("0")
+        .arg("Old")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already applied"));
+}
+
+#[test]
+fn rerun_without_at_least_zero_exits_two() {
     let dir = fixture(&[("a.txt", "Old\n")]);
     recast().arg("--apply").arg("Old").arg("New").arg(dir.path()).assert().success();
     recast()
@@ -115,8 +222,8 @@ fn already_applied_message_on_rerun() {
         .arg("New")
         .arg(dir.path())
         .assert()
-        .success()
-        .stdout(predicate::str::contains("already applied"));
+        .code(2)
+        .stderr(predicate::str::contains("match-count guard violated"));
 }
 
 #[test]
