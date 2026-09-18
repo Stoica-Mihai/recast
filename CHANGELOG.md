@@ -62,6 +62,31 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ### Fixed
 
+- **Error messages named the wrong front end's flags.** `recast-core` is
+  shared by the CLI and the MCP server, but its messages hardcoded one
+  vocabulary — and not consistently: `Locked` said `--force`,
+  `SyntaxRegression` said `allow_syntax_errors`, `FileTooLarge` said
+  `--max-bytes`. Eight messages leaked a spelling. Over MCP the worst
+  case was `locked` telling an agent to "use `--force`" when no such
+  argument exists on that surface at all.
+
+  Messages now describe the condition only. The knob is a typed
+  `Remedy`, returned by `Error::remedies()` through an exhaustive match,
+  and each front end renders its own vocabulary: the CLI appends
+  `see --word / --allow-non-convergent`, the MCP server says
+  `set word or allow_non_convergent` and ships the slugs as a
+  `remedies` array beside `kind` — so an agent branches on structure
+  instead of parsing prose. `--json` carries the same array.
+
+  `force_lock` has no MCP spelling on purpose. Measured: a SIGKILLed
+  holder releases its `flock`, so a held lock always means a live peer
+  is mid-apply, and forcing past it is the one thing an agent should not
+  do unprompted. The `locked` error returns `"remedies": []`, and the
+  tool instructions say to wait or ask.
+
+  A test asserts no core message contains `--` or any MCP argument name;
+  it was watched failing on the exact `--force` text that started this.
+
 - **The workspace lock is keyed on the VCS root and stored outside the
   tree.** Two separate defects, one mechanism:
 

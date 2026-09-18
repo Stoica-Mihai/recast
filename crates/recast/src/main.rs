@@ -9,7 +9,7 @@ use clap::{ArgAction, Args, Parser};
 use clap_complete::Shell;
 use recast_core::{
     CompiledPattern, Error as CoreError, Language, PatternOptions, Plan, PlanOptions, PlanOutcome,
-    RenameMap, ScriptRewriter, SearchOptions, SearchPlan, WalkOptions, WorkspaceLock,
+    Remedy, RenameMap, ScriptRewriter, SearchOptions, SearchPlan, WalkOptions, WorkspaceLock,
     acquire_workspace_lock_for_paths, apply_changes, build_pool, check_match_counts, json,
     plan_rename, plan_rewrite, plan_rewrite_scripted, plan_search, plan_structural_rewrite,
     plan_structural_search, recover_sweep, rewrite_text, rewrite_text_scripted, structural_rewrite,
@@ -698,9 +698,34 @@ fn handle_plan_error(err: CoreError, as_json: bool) -> Result<u8> {
         let line = json::from_error(&err, code).to_line().context("serialize json error")?;
         println!("{line}");
     } else {
-        eprintln!("recast: {err}");
+        eprintln!("recast: {err}{}", remedy_hint(err.remedies()));
     }
     Ok(code)
+}
+
+/// This binary's spelling of a [`Remedy`]. `recast-core` names the knob,
+/// not the flag, because the MCP server renders the same knob as
+/// `word: true`.
+fn remedy_flag(remedy: Remedy) -> &'static str {
+    match remedy {
+        Remedy::AtLeast => "--at-least",
+        Remedy::AtMost => "--at-most",
+        Remedy::MaxBytes => "--max-bytes",
+        Remedy::MaxFiles => "--max-files",
+        Remedy::Word => "--word",
+        Remedy::AllowNonConvergent => "--allow-non-convergent",
+        Remedy::AllowSyntaxErrors => "--allow-syntax-errors",
+        Remedy::ForceLock => "--force",
+        Remedy::Threads => "--threads",
+    }
+}
+
+fn remedy_hint(remedies: &[Remedy]) -> String {
+    if remedies.is_empty() {
+        return String::new();
+    }
+    let flags: Vec<&str> = remedies.iter().copied().map(remedy_flag).collect();
+    format!("; see {}", flags.join(" / "))
 }
 
 fn run_rename(cli: &Cli) -> Result<u8> {

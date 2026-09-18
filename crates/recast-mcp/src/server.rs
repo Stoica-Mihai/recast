@@ -17,8 +17,8 @@
 use std::path::PathBuf;
 
 use recast_core::{
-    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, RenameMap, ScriptRewriter,
-    SearchOptions, WalkOptions, acquire_workspace_lock_for_paths, apply_changes,
+    Language, PatternOptions, Plan, PlanOptions, RecoverySummary, Remedy, RenameMap,
+    ScriptRewriter, SearchOptions, WalkOptions, acquire_workspace_lock_for_paths, apply_changes,
     compile_friendly_query, json, plan_rename, plan_rewrite, plan_rewrite_scripted, plan_search,
     plan_structural_rewrite, plan_structural_search, recover_sweep,
 };
@@ -395,7 +395,15 @@ impl ServerHandler for RecastServer {
                  failure, convergence check (refuses `a` → `aa`), `at_least=1` guard \
                  (refuses silent zero-match runs), syntax-regression guard (refuses rewrites \
                  that introduce new tree-sitter parse errors; `allow_syntax_errors` to \
-                 override), crash-recovery sweep, workspace lock."
+                 override), crash-recovery sweep, workspace lock.\n\
+                 \n\
+                 ON ERROR: every failure carries `kind` plus `remedies`, a list of the \
+                 arguments that could clear it (e.g. `[\"word\", \"allow_non_convergent\"]`). \
+                 Branch on those, not on the message text. An EMPTY `remedies` means no \
+                 argument will help — fix the pattern, or stop.\n\
+                 - `kind: \"locked\"` always has empty `remedies`. Another process is \
+                 applying to this tree RIGHT NOW; a crashed one would have released the \
+                 lock. Wait and retry, or tell the user. There is no force argument."
                     .to_owned(),
             )
     }
@@ -830,14 +838,43 @@ fn rerun_note(map: &RenameMap) -> String {
     }
 }
 
+/// This server's spelling of a [`Remedy`], or `None` when the knob has
+/// no MCP argument.
+///
+/// `ForceLock` is deliberately absent. A crashed holder releases its
+/// `flock` on exit, so a held lock always means a *live* peer is
+/// mid-apply; the only thing forcing could do for an agent is barge
+/// into someone else's two-phase commit. An empty remedy list is the
+/// honest answer — wait and retry, or stop and ask.
+fn remedy_arg(remedy: Remedy) -> Option<&'static str> {
+    match remedy {
+        Remedy::AtLeast => Some("at_least"),
+        Remedy::AtMost => Some("at_most"),
+        Remedy::MaxBytes => Some("max_bytes"),
+        Remedy::MaxFiles => Some("max_files"),
+        Remedy::Word => Some("word"),
+        Remedy::AllowNonConvergent => Some("allow_non_convergent"),
+        Remedy::AllowSyntaxErrors => Some("allow_syntax_errors"),
+        Remedy::Threads => None,
+        Remedy::ForceLock => None,
+    }
+}
+
 fn to_mcp_err(err: recast_core::Error) -> McpError {
     let kind = err.kind();
     let kind_str = serde_json::to_value(kind)
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| "internal".to_owned());
+    let remedies: Vec<&'static str> =
+        err.remedies().iter().copied().filter_map(remedy_arg).collect();
+    let hint = if remedies.is_empty() {
+        String::new()
+    } else {
+        format!("; set {}", remedies.join(" or "))
+    };
     McpError::invalid_params(
-        format!("recast: {err}"),
-        Some(serde_json::json!({ "kind": kind_str })),
+        format!("recast: {err}{hint}"),
+        Some(serde_json::json!({ "kind": kind_str, "remedies": remedies })),
     )
 }

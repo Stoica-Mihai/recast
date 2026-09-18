@@ -91,28 +91,34 @@ fn plan_rejects_non_convergent_pattern() {
 }
 
 #[test]
-fn non_convergent_error_names_the_override_flag() {
+fn non_convergent_offers_the_override_as_a_typed_remedy() {
+    use crate::error::Remedy;
     let dir = fixture(&[("a.txt", "abc\n")]);
     let err = plan_rewrite("a", "aa", &[dir.path()], &PlanOptions::default()).unwrap_err();
-    assert!(err.to_string().contains("--allow-non-convergent"), "{err}");
+    assert!(err.remedies().contains(&Remedy::AllowNonConvergent), "{err:?}");
 }
 
 #[test]
-fn the_two_non_convergence_causes_produce_different_messages() {
+fn the_two_non_convergence_causes_differ_in_message_and_in_remedy() {
+    use crate::error::Remedy;
     let by_replacement = fixture(&[("a.txt", "let x = Outcome;\n")]);
-    let replacement_msg =
+    let replacement =
         plan_rewrite("Outcome", "ReadOutcome", &[by_replacement.path()], &literal_opts())
-            .unwrap_err()
-            .to_string();
+            .unwrap_err();
 
     let by_context = fixture(&[("b.txt", "aabb\n")]);
-    let context_msg = plan_rewrite("ab", "a", &[by_context.path()], &PlanOptions::default())
-        .unwrap_err()
-        .to_string();
+    let context =
+        plan_rewrite("ab", "a", &[by_context.path()], &PlanOptions::default()).unwrap_err();
 
-    assert_ne!(replacement_msg, context_msg, "both causes still print the same advice");
-    assert!(replacement_msg.contains("--allow-non-convergent"), "{replacement_msg}");
-    assert!(context_msg.contains("--allow-non-convergent"), "{context_msg}");
+    assert_ne!(
+        replacement.to_string(),
+        context.to_string(),
+        "both causes still print the same advice"
+    );
+    // Word boundaries fix the first and cannot fix the second, so the
+    // remedies must differ too, not just the prose.
+    assert!(replacement.remedies().contains(&Remedy::Word), "{replacement:?}");
+    assert!(!context.remedies().contains(&Remedy::Word), "{context:?}");
 }
 
 #[test]
@@ -139,7 +145,7 @@ fn non_convergent_script_is_not_blamed_on_a_static_replacement() {
     let err =
         plan_rewrite_scripted("a", &script, &[dir.path()], &PlanOptions::default()).unwrap_err();
     assert!(matches!(err, Error::NonConvergentScript { .. }), "{err:?}");
-    assert!(err.to_string().contains("--allow-non-convergent"), "{err}");
+    assert!(err.remedies().contains(&crate::error::Remedy::AllowNonConvergent), "{err:?}");
 }
 
 #[test]

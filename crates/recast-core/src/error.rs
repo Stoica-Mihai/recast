@@ -5,6 +5,12 @@
 //! variant for JSON output. The mapping lives here so adding an
 //! [`Error`] variant without extending [`ErrorKind`] is a compile
 //! error rather than a runtime mis-tag.
+//!
+//! **Messages here name no flags.** A knob that could clear the error is
+//! reported as a typed [`Remedy`]; each front end renders it in its own
+//! vocabulary, because this crate does not know whether it is serving
+//! the CLI (`--word`) or the MCP server (`word: true`). A test asserts
+//! no message leaks either spelling.
 
 use std::path::{Path, PathBuf};
 
@@ -22,24 +28,24 @@ pub enum Error {
     #[error("i/o error at {path}: {source}")]
     Io { path: PathBuf, source: std::io::Error },
 
-    #[error("file {path} exceeds --max-bytes ({size} > {limit})")]
+    #[error("file {path} is {size} bytes, over the {limit}-byte per-file limit")]
     FileTooLarge { path: PathBuf, size: u64, limit: u64 },
 
-    #[error("scan touched {count} files; refusing (--max-files = {limit})")]
+    #[error("scan touched {count} files, over the limit of {limit}")]
     TooManyFiles { count: usize, limit: usize },
 
     #[error(
-        "pattern is non-convergent: the replacement itself still matches the pattern, so re-applying the rewrite to {path} would produce {extra} more match(es); try --word, narrow the pattern by hand, or pass --allow-non-convergent to override"
+        "pattern is non-convergent: the replacement itself still matches the pattern, so re-applying the rewrite to {path} would produce {extra} more match(es); matching whole words usually fixes this"
     )]
     NonConvergentReplacement { path: PathBuf, extra: usize },
 
     #[error(
-        "pattern is non-convergent: the replacement is clean, but the rewrite brings surrounding text in {path} into {extra} new match(es); word boundaries will not help — fix the pattern's overlap or pass --allow-non-convergent to override"
+        "pattern is non-convergent: the replacement is clean, but the rewrite brings surrounding text in {path} into {extra} new match(es); the pattern overlaps itself, so matching whole words will not help"
     )]
     NonConvergentContext { path: PathBuf, extra: usize },
 
     #[error(
-        "pattern is non-convergent: re-applying the script to the rewrite of {path} would produce {extra} more match(es); the script's output is dynamic, so the cause cannot be narrowed statically — pass --allow-non-convergent to override"
+        "pattern is non-convergent: re-applying the script to the rewrite of {path} would produce {extra} more match(es); the script's output is dynamic, so the cause cannot be narrowed statically"
     )]
     NonConvergentScript { path: PathBuf, extra: usize },
 
@@ -75,17 +81,13 @@ pub enum Error {
     #[error("structural: parse error")]
     StructuralParse,
 
-    #[error(
-        "rewrite introduced {new_errors} new syntax error(s) in {path} ({lang}); pass allow_syntax_errors to override"
-    )]
+    #[error("rewrite introduced {new_errors} new syntax error(s) in {path} ({lang})")]
     SyntaxRegression { path: PathBuf, lang: &'static str, new_errors: usize },
 
-    #[error(
-        "another recast is already applying to {root} (lockfile {path} held); use --force to override"
-    )]
+    #[error("another recast is already applying to {root} (lockfile {path} held)")]
     Locked { path: PathBuf, root: PathBuf },
 
-    #[error("invalid --threads value: must be at least 1")]
+    #[error("invalid thread count: must be at least 1")]
     InvalidThreads,
 
     #[error("failed to build worker thread pool: {0}")]
@@ -123,7 +125,63 @@ pub enum ErrorKind {
     ThreadPool,
 }
 
+/// A knob that could clear an [`Error`], named by what it *is* rather
+/// than by what any one front end calls it.
+///
+/// The CLI renders `Word` as `--word`; the MCP server renders it as
+/// `word: true` and ships the slug in the error payload so an agent can
+/// branch on it instead of parsing prose. `ForceLock` has no MCP
+/// spelling on purpose — see [`Error::remedies`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum Remedy {
+    AtLeast,
+    AtMost,
+    MaxBytes,
+    MaxFiles,
+    Word,
+    AllowNonConvergent,
+    AllowSyntaxErrors,
+    ForceLock,
+    Threads,
+}
+
 impl Error {
+    /// Knobs that could clear this error, most useful first. Empty when
+    /// the caller has to change the pattern or the tree instead.
+    ///
+    /// The match is exhaustive, so a new [`Error`] variant cannot be
+    /// added without deciding its remedy — which is how the flag names
+    /// drifted out of sync before this existed.
+    pub fn remedies(&self) -> &'static [Remedy] {
+        match self {
+            Error::FileTooLarge { .. } => &[Remedy::MaxBytes],
+            Error::TooManyFiles { .. } => &[Remedy::MaxFiles],
+            Error::NonConvergentReplacement { .. } => &[Remedy::Word, Remedy::AllowNonConvergent],
+            Error::NonConvergentContext { .. } | Error::NonConvergentScript { .. } => {
+                &[Remedy::AllowNonConvergent]
+            }
+            Error::TooFewMatches { .. } => &[Remedy::AtLeast],
+            Error::TooManyMatches { .. } => &[Remedy::AtMost],
+            Error::SyntaxRegression { .. } => &[Remedy::AllowSyntaxErrors],
+            Error::Locked { .. } => &[Remedy::ForceLock],
+            Error::InvalidThreads | Error::ThreadPool(_) => &[Remedy::Threads],
+            Error::InvalidRegex(_)
+            | Error::InvalidGlob(_)
+            | Error::Walk(_)
+            | Error::Io { .. }
+            | Error::InvalidRenameMap { .. }
+            | Error::RenameMapDiverges { .. }
+            | Error::ScriptParse(_)
+            | Error::ScriptRuntime(_)
+            | Error::UnknownLanguage(_)
+            | Error::StructuralQuery(_)
+            | Error::StructuralTemplate(_)
+            | Error::StructuralParse => &[],
+        }
+    }
+
     /// Tag for this variant. The match is exhaustive; adding a new
     /// variant without extending [`ErrorKind`] is a compile error.
     pub fn kind(&self) -> ErrorKind {
@@ -170,3 +228,7 @@ impl<T> IoCtx<T> for std::result::Result<T, std::io::Error> {
         self.map_err(|source| Error::Io { path: path.to_path_buf(), source })
     }
 }
+
+#[cfg(test)]
+#[path = "error_tests.rs"]
+mod tests;

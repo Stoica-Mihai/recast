@@ -17,7 +17,7 @@ use serde::Serialize;
 
 use crate::commit::ApplyOutcome;
 use crate::error::Error;
-pub use crate::error::ErrorKind;
+pub use crate::error::{ErrorKind, Remedy};
 use crate::plan::{Plan, PlanOutcome};
 use crate::search::SearchPlan;
 
@@ -58,6 +58,10 @@ pub enum JsonReport<'a> {
         error: ErrorKind,
         message: String,
         exit_code: u8,
+        /// Knobs that could clear this error. Empty when the caller has
+        /// to change the pattern or the tree instead. Branch on these
+        /// rather than reading `message`, which is prose.
+        remedies: &'static [Remedy],
     },
 }
 
@@ -120,7 +124,12 @@ pub fn from_check(plan: &Plan) -> JsonReport<'_> {
 }
 
 pub fn from_error(err: &Error, exit_code: u8) -> JsonReport<'static> {
-    JsonReport::Error { error: err.kind(), message: err.to_string(), exit_code }
+    JsonReport::Error {
+        error: err.kind(),
+        message: err.to_string(),
+        exit_code,
+        remedies: err.remedies(),
+    }
 }
 
 pub fn from_search(plan: &SearchPlan) -> JsonReport<'static> {

@@ -594,9 +594,38 @@ fn non_convergent_context_gives_different_advice() {
     let dir = fixture(&[("a.txt", "aabb\n")]);
     recast().arg("ab").arg("a").arg(dir.path()).assert().code(3).stderr(
         predicate::str::contains("surrounding text")
-            .and(predicate::str::contains("word boundaries will not help"))
-            .and(predicate::str::contains("--allow-non-convergent")),
+            .and(predicate::str::contains("matching whole words will not help"))
+            .and(predicate::str::contains("--allow-non-convergent"))
+            .and(predicate::str::contains("--word").not()),
     );
+}
+
+#[test]
+fn cli_renders_remedies_as_its_own_flags() {
+    let dir = fixture(&[("a.txt", "Old\n")]);
+    recast()
+        .arg("--at-least")
+        .arg("5")
+        .arg("Old")
+        .arg("New")
+        .arg(dir.path())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("see --at-least"));
+}
+
+#[test]
+fn cli_json_error_carries_typed_remedies() {
+    let dir = fixture(&[("a.txt", "let x = Outcome;\n")]);
+    recast()
+        .arg("--json")
+        .arg("--literal")
+        .arg("Outcome")
+        .arg("ReadOutcome")
+        .arg(dir.path())
+        .assert()
+        .code(3)
+        .stdout(predicate::str::contains(r#""remedies":["word","allow_non_convergent"]"#));
 }
 
 #[test]

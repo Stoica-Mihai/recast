@@ -287,6 +287,7 @@ the count it owns.
          | "locked"
          | "invalid_threads"
          | "thread_pool",
+  "remedies": ["word" | "allow_non_convergent" | "at_least" | ...],
   "message": "human-readable description",
   "exit_code": 2 | 3
 }

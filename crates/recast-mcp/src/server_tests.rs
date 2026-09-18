@@ -199,6 +199,42 @@ async fn apply_refuses_when_the_workspace_lock_is_held() {
     let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
     assert_eq!(data["kind"], "locked", "wrong kind: {data}");
     assert_eq!(fs::read_to_string(&target).unwrap(), "old\n", "wrote despite the lock");
+
+    // `force` has no MCP argument on purpose: a crashed holder releases
+    // its flock, so a held lock means a live peer. An empty list is the
+    // honest answer, and the message must not tell the agent otherwise.
+    assert_eq!(data["remedies"].as_array().map(Vec::len), Some(0), "{data}");
+    assert!(!err.message.contains("--force"), "{}", err.message);
+    assert!(!err.message.contains("set "), "{}", err.message);
+}
+
+#[tokio::test]
+async fn errors_carry_remedies_in_this_server_s_own_vocabulary() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "let x = Outcome;\n").unwrap();
+
+    let mut args = rewrite_args("Outcome", "ReadOutcome", dir.path());
+    args.literal = true;
+    let err = server().recast_preview(Parameters(args)).await.unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+
+    assert_eq!(data["kind"], "non_convergent_replacement", "{data}");
+    assert_eq!(data["remedies"], serde_json::json!(["word", "allow_non_convergent"]), "{data}");
+    // MCP spelling in the prose, never the CLI one.
+    assert!(err.message.contains("set word or allow_non_convergent"), "{}", err.message);
+    assert!(!err.message.contains("--"), "{}", err.message);
+}
+
+#[tokio::test]
+async fn a_guard_violation_points_at_its_own_argument() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("a.txt"), "old\n").unwrap();
+
+    let mut args = rewrite_args("nope", "x", dir.path());
+    args.at_least = Some(1);
+    let err = server().recast_preview(Parameters(args)).await.unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+    assert_eq!(data["remedies"], serde_json::json!(["at_least"]), "{data}");
 }
 
 #[tokio::test]

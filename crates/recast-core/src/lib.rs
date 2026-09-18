@@ -31,7 +31,7 @@ mod template_scan;
 mod walker;
 
 pub use commit::{ApplyOutcome, RecoverySummary, apply_changes, recover_sweep};
-pub use error::{Error, Result};
+pub use error::{Error, Remedy, Result};
 pub use lockfile::{
     WorkspaceLock, acquire_workspace_lock, acquire_workspace_lock_for_paths, lock_dir,
     workspace_lock_path, workspace_root,

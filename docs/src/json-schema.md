@@ -88,12 +88,32 @@ as a header that appears in that order; the mode-specific count
     | "invalid_threads"
     | "thread_pool",
   "message": "human-readable description",
-  "exit_code": 2 | 3
+  "exit_code": 2 | 3,
+  "remedies": [
+      "at_least" | "at_most" | "max_bytes" | "max_files"
+    | "word" | "allow_non_convergent" | "allow_syntax_errors"
+    | "force_lock" | "threads"
+  ]
 }
 ```
 
 The `exit_code` field mirrors the process exit code so agents can branch
 on `kind: "error"` without re-reading `$?`.
+
+`remedies` lists the knobs that could clear this error, most useful
+first, and is empty when the fix is to change the pattern or the tree
+instead. **Branch on it rather than reading `message`**, which is prose.
+`recast-core` names the knob, not the flag, because it does not know
+whether it is serving the CLI or the MCP server — so the same
+`non_convergent_replacement` reports `["word", "allow_non_convergent"]`
+here, prints `see --word / --allow-non-convergent` on the CLI, and says
+`set word or allow_non_convergent` over MCP.
+
+One knob is deliberately CLI-only. `force_lock` appears in this list but
+has **no MCP argument**: a crashed holder releases its `flock` on exit,
+so a held lock always means a live process is mid-apply, and the MCP
+`locked` error returns `"remedies": []`. Wait and retry, or stop and
+ask — there is nothing to set.
 
 ## Stability
 
