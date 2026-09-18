@@ -1,6 +1,7 @@
 # recast
 
 [![crates.io](https://img.shields.io/crates/v/recast-cli.svg?label=recast-cli)](https://crates.io/crates/recast-cli)
+[![recast-mcp](https://img.shields.io/crates/v/recast-mcp.svg?label=recast-mcp)](https://crates.io/crates/recast-mcp)
 [![recast-core](https://img.shields.io/crates/v/recast-core.svg?label=recast-core)](https://crates.io/crates/recast-core)
 [![docs.rs](https://img.shields.io/docsrs/recast-core)](https://docs.rs/recast-core)
 [![CI](https://github.com/Stoica-Mihai/recast/actions/workflows/ci.yml/badge.svg)](https://github.com/Stoica-Mihai/recast/actions/workflows/ci.yml)
@@ -31,9 +32,10 @@ humans for mechanical refactors.
    (`--script`), or tree-sitter structural (`--lang` + `--query` /
    `--ast`).
 
-Status: alpha (v0.1.6). All phases of [`PLAN.md`](./PLAN.md) landed.
+Status: alpha (v0.2.0). All phases of [`PLAN.md`](./PLAN.md) landed.
 
 - 📦 Install: `cargo install recast-cli` ([crates.io/recast-cli](https://crates.io/crates/recast-cli))
+- 🤖 MCP server: `cargo install recast-mcp` ([crates.io/recast-mcp](https://crates.io/crates/recast-mcp))
 - 📚 Library: [crates.io/recast-core](https://crates.io/crates/recast-core) · [docs.rs/recast-core](https://docs.rs/recast-core)
 - 📥 Pre-built binaries: [GitHub Releases](https://github.com/Stoica-Mihai/recast/releases)
 - 📖 Hosted docs: <https://stoica-mihai.github.io/recast/>

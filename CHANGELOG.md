@@ -7,6 +7,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-18
+
+Minor, not patch: three of the changes below break callers. A zero-match
+run now exits 2, so a `--check` CI gate on a clean tree and a retry loop
+re-running a finished rewrite both need `--at-least 0`. The
+`non_convergent` JSON discriminant became three. The error object gained
+`remedies`, and most error wording changed.
+
 ### Added
 
 - **`--rename OLD=NEW` (CLI) and the `recast_rename` MCP tool:

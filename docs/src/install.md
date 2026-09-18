@@ -44,6 +44,21 @@ features you actually use — see [Cargo features](./cargo-features.md).
 cargo install recast-cli --no-default-features --features lang-rust
 ```
 
+## MCP server
+
+The Model Context Protocol server is a separate crate and a separate
+binary, so an agent host can run it without the CLI:
+
+```bash
+cargo install recast-mcp
+```
+
+Three crates ship to crates.io — `recast-cli` (the `recast` binary),
+`recast-mcp` (the `recast-mcp` server binary), and `recast-core` (the
+engine both link against). See
+[crates.io/recast-mcp](https://crates.io/crates/recast-mcp) for the
+client configuration snippet.
+
 ## From source
 
 ```bash
