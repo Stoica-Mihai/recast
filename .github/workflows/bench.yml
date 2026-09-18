@@ -38,9 +38,24 @@ jobs:
         # `--output-format bencher` makes criterion print one
         # `test … bench: N ns/iter (+/- M)` line per measurement, which
         # github-action-benchmark parses with `tool: 'cargo'`.
+        #
+        # target/criterion is wiped first because it arrives via
+        # rust-cache, which keys on Cargo.lock. Any dependency bump
+        # invalidates that key and leaves criterion with a partial
+        # baseline, whereupon it prints
+        #   test NAME ... Criterion.rs ERROR: Failed to access file ".../base/sample.json"
+        # splitting the one-line bencher record in two. The parser then
+        # reports "No benchmark result was found" and the job fails —
+        # and with CACHE_ON_FAILURE=false it never saves a cache, so
+        # every later run misses too and it cannot recover on its own.
+        # The dashboard's history lives in gh-pages, not here, so
+        # starting criterion clean costs nothing.
         run: |
+          rm -rf target/criterion
           cargo bench -p recast-core --features lang-rust,script --bench engine -- \
             --output-format bencher | tee bench-output.txt
+          grep -qE '^test .+ \.\.\. bench:' bench-output.txt \
+            || { echo "::error::bench-output.txt has no parseable bencher lines"; exit 1; }
 
       - name: Store / compare against baseline
         uses: benchmark-action/github-action-benchmark@v1
