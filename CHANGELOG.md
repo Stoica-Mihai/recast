@@ -7,6 +7,34 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--ast` pattern compilation was quadratic in pattern depth.**
+  `emit_node` asked `subtree_ellipsis_capture` whether each node's
+  subtree is a lone `$$$NAME` metavar, and that function walked the
+  whole subtree to answer — once per node. The answer is now computed
+  bottom-up in a single pass (`EllipsisIndex`).
+
+  Measured on nested reference types, `fn f(x: &&&…u8) {}`:
+
+  | depth | before | after |
+  |---|---|---|
+  | 400 | 7.2 ms | 0.27 ms |
+  | 800 | 25.9 ms | 0.51 ms |
+  | 1600 | 101.6 ms | 1.04 ms |
+  | 3200 | 394.0 ms | 2.18 ms |
+
+  Doubling the depth used to quadruple the time; it now doubles it.
+  Emitted queries are byte-identical before and after — same lengths at
+  every depth — so this is cost only, not behaviour. `--ast` takes an
+  unbounded string from the CLI and from the MCP `ast_pattern`
+  argument, so the old curve was reachable: depth 8000 took 16.4 s.
+
+  Guarded by a test at depth 8000 with a 1 s budget, watched failing at
+  16.4 s with the fix reverted. Linear is single-digit milliseconds
+  there, so the budget tolerates a CI machine an order of magnitude
+  slower.
+
 ## [0.2.0] — 2026-09-18
 
 Minor, not patch: three of the changes below break callers. A zero-match

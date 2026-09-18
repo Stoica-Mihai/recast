@@ -721,7 +721,15 @@ pub fn compile_friendly_query(lang: Language, pattern: &str) -> Result<String> {
     let mut buf = String::new();
     let mut predicates: Vec<String> = Vec::new();
     let mut lit_counter: usize = 0;
-    emit_node(&mut buf, &mut predicates, &mut lit_counter, effective, substituted.as_bytes());
+    let ellipses = EllipsisIndex::build(effective, substituted.as_bytes());
+    emit_node(
+        &mut buf,
+        &mut predicates,
+        &mut lit_counter,
+        effective,
+        substituted.as_bytes(),
+        &ellipses,
+    );
     let trimmed = buf.trim_start();
     if predicates.is_empty() {
         Ok(format!("{trimmed} @root"))
@@ -768,6 +776,7 @@ fn emit_node(
     lit_counter: &mut usize,
     node: Node<'_>,
     src: &[u8],
+    ellipses: &EllipsisIndex,
 ) {
     use std::fmt::Write as _;
 
@@ -791,9 +800,9 @@ fn emit_node(
                     buf.push_str(name);
                     buf.push(':');
                 }
-                if let Some(ellipsis) = subtree_ellipsis_capture(node, src) {
+                if let Some(ellipsis) = ellipses.lone_ellipsis(node) {
                     buf.push_str(" (_) @");
-                    buf.push_str(&ellipsis);
+                    buf.push_str(ellipsis);
                     continue;
                 }
                 if let Some(meta) = metavar_at(node, src) {
@@ -908,35 +917,88 @@ fn metavar_at(node: Node<'_>, src: &[u8]) -> Option<String> {
 /// single-node metavars), return the ellipsis name. Such a subtree
 /// collapses to a single `(_) @NAME` wildcard in the generated query
 /// so the parent field can match any shape.
-fn subtree_ellipsis_capture(node: Node<'_>, src: &[u8]) -> Option<String> {
-    let mut ellipsis: Option<String> = None;
-    let mut other_leaves = 0usize;
-    let mut stack = vec![node];
-    while let Some(n) = stack.pop() {
-        if !n.is_named() {
-            continue;
+/// For every node, whether its whole subtree is a single `$$$NAME`
+/// ellipsis metavar and nothing else — the case [`emit_node`] collapses
+/// to a wildcard capture.
+///
+/// Built bottom-up in one pass. Answering the question per node by
+/// re-walking that node's subtree is quadratic in pattern depth: a
+/// 3.2 KB `--ast` pattern of nested reference types took 394 ms, and
+/// doubling the depth quadrupled it.
+#[derive(Debug, Default)]
+struct EllipsisIndex {
+    lone: std::collections::HashMap<usize, String>,
+}
+
+impl EllipsisIndex {
+    fn build(root: Node<'_>, src: &[u8]) -> Self {
+        enum Step<'tree> {
+            Enter(Node<'tree>),
+            Exit(Node<'tree>),
         }
-        if n.named_child_count() == 0 {
-            let text = n.utf8_text(src).ok()?;
-            if let Some(stripped) =
-                text.strip_prefix(ELLIPSIS_PREFIX).and_then(|s| s.strip_suffix(METAVAR_SUFFIX))
-                && !stripped.is_empty()
-            {
-                if ellipsis.is_some() {
-                    return None;
+        // Per subtree: named leaves that aren't ellipsis metavars, how
+        // many that are, and the sole ellipsis name when there is one.
+        let mut summary: std::collections::HashMap<usize, (usize, usize, Option<String>)> =
+            std::collections::HashMap::new();
+        let mut index = Self::default();
+
+        let mut stack = vec![Step::Enter(root)];
+        while let Some(step) = stack.pop() {
+            match step {
+                Step::Enter(node) => {
+                    if !node.is_named() {
+                        continue;
+                    }
+                    stack.push(Step::Exit(node));
+                    let mut cursor = node.walk();
+                    for child in node.named_children(&mut cursor) {
+                        stack.push(Step::Enter(child));
+                    }
                 }
-                ellipsis = Some(stripped.to_owned());
-                continue;
+                Step::Exit(node) => {
+                    let entry = if node.named_child_count() == 0 {
+                        match node
+                            .utf8_text(src)
+                            .ok()
+                            .and_then(|t| t.strip_prefix(ELLIPSIS_PREFIX))
+                            .and_then(|t| t.strip_suffix(METAVAR_SUFFIX))
+                            .filter(|name| !name.is_empty())
+                        {
+                            Some(name) => (0usize, 1usize, Some(name.to_owned())),
+                            None => (1, 0, None),
+                        }
+                    } else {
+                        let (mut plain, mut ellipses, mut name) = (0usize, 0usize, None);
+                        let mut cursor = node.walk();
+                        for child in node.named_children(&mut cursor) {
+                            if let Some((child_plain, child_ellipses, child_name)) =
+                                summary.get(&child.id())
+                            {
+                                plain += child_plain;
+                                ellipses += child_ellipses;
+                                if *child_ellipses == 1 {
+                                    name.clone_from(child_name);
+                                }
+                            }
+                        }
+                        if ellipses == 1 { (plain, 1, name) } else { (plain, ellipses, None) }
+                    };
+                    if entry.0 == 0
+                        && entry.1 == 1
+                        && let Some(name) = entry.2.clone()
+                    {
+                        index.lone.insert(node.id(), name);
+                    }
+                    summary.insert(node.id(), entry);
+                }
             }
-            other_leaves += 1;
-            continue;
         }
-        let mut c = n.walk();
-        for child in n.named_children(&mut c) {
-            stack.push(child);
-        }
+        index
     }
-    if other_leaves == 0 { ellipsis } else { None }
+
+    fn lone_ellipsis(&self, node: Node<'_>) -> Option<&str> {
+        self.lone.get(&node.id()).map(String::as_str)
+    }
 }
 
 #[cfg(test)]

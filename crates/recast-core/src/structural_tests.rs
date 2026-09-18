@@ -265,6 +265,32 @@ fn plan_structural_zero_matches_allowed_with_at_least_zero() {
 }
 
 #[test]
+fn a_deeply_nested_ellipsis_still_collapses_to_one_capture() {
+    let pattern = format!("fn f(x: {}$$$T) {{}}", "&".repeat(400));
+    let query = compile_friendly_query(Language::Rust, &pattern).unwrap();
+    assert_eq!(query.matches("@T").count(), 1, "{query}");
+    assert!(query.contains("(_) @T"), "{query}");
+}
+
+/// Guards the cost of `EllipsisIndex`, which exists to stop `emit_node`
+/// re-walking each node's subtree. That was quadratic in depth: 394 ms
+/// at depth 3200 locally, quadrupling per doubling, so depth 8000 cost
+/// about 2.5 s. Linear it is single-digit milliseconds, and the budget
+/// below leaves room for a CI machine an order of magnitude slower.
+#[test]
+fn compiling_a_deep_pattern_is_not_quadratic() {
+    let pattern = format!("fn f(x: {}u8) {{}}", "&".repeat(8000));
+    let start = std::time::Instant::now();
+    let query = compile_friendly_query(Language::Rust, &pattern).unwrap();
+    let elapsed = start.elapsed();
+    assert!(!query.is_empty());
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "depth-8000 pattern took {elapsed:?}; the per-node subtree walk is probably back"
+    );
+}
+
+#[test]
 fn guard_syntax_skips_unknown_extension() {
     assert!(guard_syntax(Path::new("notes.txt"), "fn a() {", "fn a() {{").is_ok());
 }
