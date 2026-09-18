@@ -60,6 +60,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
   `x -foo- y`, `rg -w -e '-foo-'` matches and `rg -e '\b(?:-foo-)\b'`
   does not. `regex` 1.12.3 supports the `\b{start-half}` syntax.
 
+- **`crates/recast-mcp/tests/stdio.rs`: transport-level tests.** Spawns
+  the real binary and speaks JSON-RPC over its stdio, the way a client
+  does. Runs in CI already — `cargo test --workspace` picks it up, no
+  workflow change.
+
+  The in-process tests call handler methods directly, which serializes
+  nothing. Demonstrated rather than asserted: renaming the `word`
+  argument in the advertised schema left **all 297 other tests green**,
+  and only this file caught it. Same for the `locked` message naming
+  `--force`, an argument that surface does not have — the bug that
+  prompted the file, and one no existing test could see.
+
+  Covers the handshake, the advertised tool list, the argument schema
+  against what the docs promise, `kind` + `remedies` on the wire, an
+  apply that actually writes, and the rename map's once-only note. A
+  reader thread with `recv_timeout` means a server that never answers
+  fails the test instead of hanging CI. No new dependency:
+  `CARGO_BIN_EXE_recast-mcp` is the binary Cargo just built.
+
 ### Fixed
 
 - **Error messages named the wrong front end's flags.** `recast-core` is

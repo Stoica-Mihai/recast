@@ -53,6 +53,10 @@ crates/
     src/script.rs                  # Rhai scripted replacements (feature `script`)
     src/structural.rs              # tree-sitter rewrites + friendly `$NAME` patterns
     src/proptests.rs               # property tests covering the public surface
+  recast-mcp/                     # binary: MCP server over stdio
+    src/server.rs                  # six tools, 1:1 with the planner API
+    src/server_tests.rs            # in-process: handler methods called directly
+    tests/stdio.rs                 # transport: spawns the binary, speaks JSON-RPC
 ```
 
 Data flow per regex/script invocation:
@@ -93,9 +97,18 @@ Cross-crate types live in `recast-core`. The binary depends on the library, neve
 crates/
   recast/
   recast-core/
+  recast-mcp/
 ```
 
-Each crate keeps a tight surface. The binary depends on the library, never the reverse.
+Each crate keeps a tight surface. Both binaries depend on the library, never the reverse.
+
+`recast-mcp` is tested at two layers on purpose. `src/server_tests.rs` calls
+the handler methods directly — fast, and enough for engine behaviour.
+`tests/stdio.rs` spawns the real binary and speaks JSON-RPC, because the
+in-process layer serializes nothing and is therefore blind to a tool that
+never got registered, an argument schema that drifted from the docs, and an
+error payload that is right as a Rust value and wrong on the wire. A change
+to the tool surface needs a test in the second file, not only the first.
 
 ## 8. Build, test, run
 
