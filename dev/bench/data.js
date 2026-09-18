@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789744224156,
+  "lastUpdate": 1789749320132,
   "repoUrl": "https://github.com/Stoica-Mihai/recast",
   "entries": {
     "recast-core engine benches": [
@@ -1169,6 +1169,84 @@ window.BENCHMARK_DATA = {
             "name": "plan_structural_rewrite/500_files",
             "value": 10412175,
             "range": "± 118973",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "committer": {
+            "email": "Stoica-Mihai@users.noreply.github.com",
+            "name": "MCS",
+            "username": "Stoica-Mihai"
+          },
+          "distinct": true,
+          "id": "9450bef6d34d6c59e114a64364a1f569bfeceb41",
+          "message": "ci: stop criterion corrupting its own bencher output\n\nThe bench job has failed since the 0.2.0 dependency bump, at the\n\"Store / compare against baseline\" step:\n\n  ##[error]No benchmark result was found in .../bench-output.txt\n\nNot a performance regression -- the benchmarks ran and printed numbers.\nThe parser needs each record on one line:\n\n  test NAME ... bench:  N ns/iter (+/- M)\n\nWhen target/criterion holds a base/ directory whose sample.json is\nmissing, criterion writes an error to STDOUT mid-record, splitting it:\n\n  test pattern_compile_simple ... Criterion.rs ERROR: error: Failed to access file \".../base/sample.json\"\n  bench:        1190 ns/iter (+/- 4)\n\nReproduced locally by deleting exactly that file: stdout corrupted,\nstderr empty. Removing base/ entirely is handled fine; it is the\npartial directory that breaks it.\n\nThat state arrives via rust-cache, which keys on Cargo.lock. Bumping a\ndependency invalidates the key and restores a mismatched target/. And\nit cannot heal: CACHE_ON_FAILURE is false, so a failed job saves no\ncache and the next run misses again -- which is why it failed twice in\na row rather than once.\n\nWiping target/criterion first costs nothing, since the dashboard's\nhistory lives in gh-pages rather than there. A clean run was verified\nto emit the one-line form.\n\nThe added grep turns the next occurrence into \"bench-output.txt has no\nparseable bencher lines\" at the step that produced it, instead of an\nopaque parser error one step later. Checked both ways against real\noutput: 0 matches on the corrupted capture, 1 on the clean one.",
+          "timestamp": "2026-09-18T19:32:09+03:00",
+          "tree_id": "9996e2a1b53f1c8b93e2294372c0200ce7f0a401",
+          "url": "https://github.com/Stoica-Mihai/recast/commit/9450bef6d34d6c59e114a64364a1f569bfeceb41"
+        },
+        "date": 1789749319609,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pattern_compile_simple",
+            "value": 2459,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pattern_compile_complex",
+            "value": 635971,
+            "range": "± 3101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/10_files",
+            "value": 1759377,
+            "range": "± 122663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/100_files",
+            "value": 3047213,
+            "range": "± 132582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_rewrite/500_files",
+            "value": 7445141,
+            "range": "± 300845",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "structural_rewrite_rename_one_identifier",
+            "value": 3282605,
+            "range": "± 152400",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/10_files",
+            "value": 3658576,
+            "range": "± 242029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/100_files",
+            "value": 5207243,
+            "range": "± 191958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "plan_structural_rewrite/500_files",
+            "value": 10519084,
+            "range": "± 176462",
             "unit": "ns/iter"
           }
         ]
