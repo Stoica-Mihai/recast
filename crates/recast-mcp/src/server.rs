@@ -16,8 +16,9 @@ use std::path::PathBuf;
 
 use recast_core::{
     Language, PatternOptions, Plan, PlanOptions, RecoverySummary, ScriptRewriter, SearchOptions,
-    WalkOptions, apply_changes, compile_friendly_query, json, plan_rewrite, plan_rewrite_scripted,
-    plan_search, plan_structural_rewrite, plan_structural_search, recover_sweep,
+    WalkOptions, acquire_workspace_lock_for_paths, apply_changes, compile_friendly_query, json,
+    plan_rewrite, plan_rewrite_scripted, plan_search, plan_structural_rewrite,
+    plan_structural_search, recover_sweep,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -145,6 +146,8 @@ impl RecastServer {
         Parameters(args): Parameters<RewriteArgs>,
     ) -> Result<CallToolResult, McpError> {
         let plan = plan_for(&args)?;
+        let _lock =
+            acquire_workspace_lock_for_paths(&args.paths_as_pathbufs()).map_err(to_mcp_err)?;
         let outcome = apply_changes(&plan).map_err(to_mcp_err)?;
         Ok(CallToolResult::success(vec![Content::json(json::from_apply(&plan, &outcome))?]))
     }
@@ -209,6 +212,7 @@ impl RecastServer {
         )
         .map_err(to_mcp_err)?;
         if args.apply {
+            let _lock = acquire_workspace_lock_for_paths(&paths).map_err(to_mcp_err)?;
             let outcome = apply_changes(&plan).map_err(to_mcp_err)?;
             Ok(CallToolResult::success(vec![Content::json(json::from_apply(&plan, &outcome))?]))
         } else {
@@ -231,6 +235,7 @@ impl RecastServer {
         Parameters(args): Parameters<RecoverArgs>,
     ) -> Result<CallToolResult, McpError> {
         let paths: Vec<PathBuf> = args.paths.iter().map(PathBuf::from).collect();
+        let _lock = acquire_workspace_lock_for_paths(&paths).map_err(to_mcp_err)?;
         let summary: RecoverySummary = recover_sweep(&paths).map_err(to_mcp_err)?;
         Ok(CallToolResult::success(vec![Content::json(summary)?]))
     }

@@ -28,6 +28,37 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once a
 
 ### Fixed
 
+- **The workspace lock is keyed on the VCS root and stored outside the
+  tree.** Two separate defects, one mechanism:
+
+  - *Scope.* The lock sat at the common ancestor of the paths *one*
+    invocation named, which cannot unify two invocations at different
+    depths. A lock held on `src/` did not stop an apply to `src/sub/`,
+    contradicting the 0.1.13 changelog entry. It now walks up to the
+    nearest `.git` / `.hg` / `.jj` / `.svn` and locks that.
+  - *Litter.* Every apply left a zero-byte `.recast.lock` at whatever
+    directory it was pointed at — four applies in four directories left
+    four files. The lockfile now lives in
+    `$XDG_RUNTIME_DIR/recast/<hash>.lock` (system temp dir as fallback),
+    so the working tree stays clean.
+
+  The file is still never unlinked, deliberately: deleting it on release
+  lets a holder of the old inode and a creator of a fresh file lock two
+  different objects and both succeed. `Error::Locked` now carries the
+  root as well as the lockfile path, so an opaque hashed filename does
+  not leave you guessing which tree is busy.
+
+  Trees with no VCS marker have no principled root and still key on the
+  common ancestor; that limitation is pinned by a test and documented in
+  `docs/src/safety.md`.
+
+- **The MCP server took no workspace lock at all.** `recast_apply`,
+  `recast_structural` with `apply`, and `recast_recover` called straight
+  into `apply_changes` / `recover_sweep`, so an agent driving the server
+  contended with nothing — including a concurrent CLI `--apply`. All
+  three now take the same lock the CLI does. Not part of the reported
+  issue; found while fixing the above.
+
 - **The match-count guard now fires on zero matches.** A pattern that
   matched nothing was reported as `already_applied` with exit 0, so a
   mistyped pattern looked like a successful no-op — the exact silent
@@ -262,6 +293,11 @@ exposed.
   the same tree from different CWDs (or one against `src/`, one
   against `src/sub/`) now share one `.recast.lock` instead of
   proceeding in parallel.
+  - **Correction (Unreleased):** the `src/` versus `src/sub/` half of
+    that claim was false. A common ancestor is computed from one
+    invocation's own arguments, so it cannot unify two separate
+    invocations naming different depths; a lock held on `src/` did not
+    stop an apply to `src/sub/`. Fixed by keying on the VCS root.
 - **EXDEV fallback** in `commit_one`, `rollback_committed`, and
   `recover_sweep`. A new `rename_with_exdev_fallback` helper catches
   `ErrorKind::CrossesDevices` from `fs::rename` and degrades to

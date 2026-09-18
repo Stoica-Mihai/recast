@@ -73,9 +73,9 @@ pub enum Error {
     SyntaxRegression { path: PathBuf, lang: &'static str, new_errors: usize },
 
     #[error(
-        "another recast is already applying to this tree (lockfile {path} held); use --force to override"
+        "another recast is already applying to {root} (lockfile {path} held); use --force to override"
     )]
-    Locked { path: PathBuf },
+    Locked { path: PathBuf, root: PathBuf },
 
     #[error("invalid --threads value: must be at least 1")]
     InvalidThreads,

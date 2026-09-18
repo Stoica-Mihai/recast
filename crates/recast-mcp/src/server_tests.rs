@@ -100,6 +100,36 @@ async fn apply_writes_changes_to_disk() {
     assert_eq!(fs::read_to_string(&target).unwrap(), "new line\n");
 }
 
+/// The MCP write paths previously called `apply_changes` with no lock
+/// at all, so an agent contended with nothing — not even a concurrent
+/// CLI `--apply`.
+#[tokio::test]
+async fn apply_refuses_when_the_workspace_lock_is_held() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join(".git")).unwrap();
+    let target = dir.path().join("a.txt");
+    fs::write(&target, "old\n").unwrap();
+
+    let root = recast_core::workspace_root(&[dir.path().to_path_buf()]);
+    let lock_path = recast_core::workspace_lock_path(&root);
+    fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+    let held = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    fs2::FileExt::try_lock_exclusive(&held).unwrap();
+
+    let err = server()
+        .recast_apply(Parameters(rewrite_args("old", "new", dir.path())))
+        .await
+        .unwrap_err();
+    let data = err.data.as_ref().unwrap_or(&serde_json::Value::Null);
+    assert_eq!(data["kind"], "locked", "wrong kind: {data}");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "old\n", "wrote despite the lock");
+}
+
 #[tokio::test]
 async fn preview_zero_matches_is_a_guard_violation() {
     let dir = TempDir::new().unwrap();

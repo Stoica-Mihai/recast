@@ -102,10 +102,40 @@ recast --recover src/
 
 ## 6. Workspace lock
 
-`--apply` and `--recover` take an exclusive non-blocking lock on
-`<root>/.recast.lock` so two concurrent rewrites against the same tree
-don't interleave. Second invocation gets an immediate
-`locked` error with exit 3 instead of corrupting the tree.
+`--apply` and `--recover` take an exclusive non-blocking lock so two
+concurrent rewrites against the same tree don't interleave. The second
+invocation gets an immediate `locked` error with exit 3 instead of
+corrupting the tree. The same lock now covers the MCP `recast_apply`,
+`recast_structural` (with `apply`), and `recast_recover` tools.
+
+**What the lock is keyed on.** The enclosing VCS checkout — the nearest
+ancestor holding `.git`, `.hg`, `.jj`, or `.svn` — not the paths a given
+invocation happens to name. So `recast --apply … src/` and
+`recast --apply … src/sub/` contend with each other, as do two runs from
+different working directories.
+
+**Where the file lives.** `$XDG_RUNTIME_DIR/recast/<hash>.lock`, or the
+system temp directory when `XDG_RUNTIME_DIR` is unset. Never inside your
+working tree, so a rewrite leaves no untracked file behind. The name is
+a stable hash of the canonical root; the error message names the tree so
+you don't have to decode it.
+
+**The file is never deleted, on purpose.** Unlinking a lockfile on
+release breaks mutual exclusion: a process still holding a descriptor on
+the old inode and a process creating a fresh file at the same path end
+up locking two different objects, and both succeed. The leftover files
+are zero bytes and live in a directory the system clears.
+
+**Limits worth knowing.**
+
+- The lock is advisory and per-user. `$XDG_RUNTIME_DIR` is mode `0700`,
+  so two *different* users rewriting one shared tree will not see each
+  other's lock.
+- A tree with no VCS marker has no principled root, so it falls back to
+  the common ancestor of the path arguments. For those trees the
+  `src/` versus `src/sub/` gap above still applies.
+- Atomicity is per-invocation, not cross-invocation. The lock stops
+  interleaving; it is not a transaction across separate runs.
 
 `--force` bypasses the lock for cases you genuinely understand (e.g.,
 the previous holder crashed and you've already run `--recover`).
